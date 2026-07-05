@@ -42,3 +42,5 @@ Dynamic Resource Editor is a professional-grade, real-time In-Game IDE and file 
 * **Templates:** Use the "Templates" dropdown to inject code snippets at your cursor position.
 
 *Note: This editor is in active development. If you encounter errors, check your server console for logs!*
+
+<img width="1725" height="967" alt="opera_m3fo2fgEGB" src="https://github.com/user-attachments/assets/b71de097-a856-4815-81b7-8d4f03d2c841" />
