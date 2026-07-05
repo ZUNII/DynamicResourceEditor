@@ -15,7 +15,7 @@ local FILES_TO_UPDATE = {
 }
 
 -- ==========================================
--- DATENBANK (ADMIN LOGS)
+-- DATABASE (ADMIN LOGS)
 -- ==========================================
 local db = dbConnect("sqlite", "logs.db")
 dbExec(db, "CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, admin TEXT, action TEXT, details TEXT)")
@@ -28,7 +28,7 @@ local function addLog(player, action, details)
 end
 
 -- ==========================================
--- UTILITIES & SICHERHEIT
+-- UTILITIES & SECURITY
 -- ==========================================
 local function isPlayerAdmin(player)
     local account = getPlayerAccount(player)
@@ -291,7 +291,6 @@ end)
 addEvent("editor:requestBackups", true)
 addEventHandler("editor:requestBackups", root, function(resName)
     if not checkAccess(client) then return end
-    -- Wir holen alle SAVE und DELETE Aktionen der Ressource aus der Datenbank
     dbQuery(function(qh, ply)
         local res = dbPoll(qh, 0)
         triggerClientEvent(ply, "editor:receiveBackups", ply, res)
@@ -303,7 +302,7 @@ addEvent("editor:restoreBackup", true)
 addEventHandler("editor:restoreBackup", root, function(resName, details, timestamp)
     if not checkAccess(client) then return end
     
-    local fileName = details:sub(#resName + 2) -- Schneidet 'resName/' vom Anfang ab
+    local fileName = details:sub(#resName + 2)
     local ts = timestamp:gsub("-", "_"):gsub(":", ""):gsub(" ", "_")
     local safeFileName = fileName:gsub("/", "_")
     local backupPath = "backups/" .. resName .. "/" .. safeFileName .. "_" .. ts .. ".backup"
