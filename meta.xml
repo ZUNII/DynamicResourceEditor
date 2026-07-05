@@ -1,5 +1,21 @@
 <meta>
-    <info author="Gemini" description="Dynamic Resource Editor" version="1.0" type="script" />
+    <info author="ZUNII" name="Dynamic Resource Editor (VS Style)" type="script" version="2.6.0" />
+    <min_mta_version server="1.6" client="1.5.9" />
+
     <script src="server.lua" type="server" />
     <script src="client.lua" type="client" />
+
+    <file src="web/editor.html" />
+    <file src="web/codemirror.min.js" />
+    <file src="web/codemirror.min.css" />
+    <file src="web/lua.min.js" />
+    <file src="web/material-darker.min.css" />
+    
+    <file src="web/search.js" />
+    <file src="web/searchcursor.js" />
+    <file src="web/dialog.js" />
+    <file src="web/dialog.css" />
+    
+    <file src="web/clike.js" />
+    <file src="web/xml.js" />
 </meta>

@@ -1,24 +1,53 @@
 -- server.lua
 
--- ==========================================
--- UPDATER CONFIGURATION
--- ==========================================
-local CURRENT_VERSION = 1.0 -- Change this when you push new updates
+local allowedExtensions = {
+    ["lua"] = true, ["xml"] = true, ["html"] = true, ["map"] = true,
+    ["js"] = true, ["css"] = true, ["txt"] = true, ["json"] = true, ["fx"] = true, ["hlsl"] = true
+}
+
+local CURRENT_VERSION = 2.0
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ZUNII/DynamicResourceEditor/main/"
 
 local FILES_TO_UPDATE = {
-    "server.lua",
-    "client.lua",
-    "meta.xml"
+    "server.lua", "client.lua", "meta.xml", "web/editor.html", 
+    "web/codemirror.min.js", "web/codemirror.min.css", "web/lua.min.js", "web/material-darker.min.css",
+    "web/search.js", "web/searchcursor.js", "web/dialog.js", "web/dialog.css", "web/clike.js", "web/xml.js"
 }
 
 -- ==========================================
--- UTILITY FUNCTIONS
+-- DATENBANK (ADMIN LOGS)
+-- ==========================================
+local db = dbConnect("sqlite", "logs.db")
+dbExec(db, "CREATE TABLE IF NOT EXISTS activity_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, admin TEXT, action TEXT, details TEXT)")
+
+local function addLog(player, action, details)
+    local t = getRealTime()
+    local timeStr = string.format("%04d-%02d-%02d %02d:%02d:%02d", t.year+1900, t.month+1, t.monthday, t.hour, t.minute, t.second)
+    local adminName = getPlayerName(player) .. " (" .. getAccountName(getPlayerAccount(player)) .. ")"
+    dbExec(db, "INSERT INTO activity_logs (time, admin, action, details) VALUES (?, ?, ?, ?)", timeStr, adminName, action, details)
+end
+
+-- ==========================================
+-- UTILITIES & SICHERHEIT
 -- ==========================================
 local function isPlayerAdmin(player)
     local account = getPlayerAccount(player)
     if not account or isGuestAccount(account) then return false end
     return isObjectInACLGroup("user." .. getAccountName(account), aclGetGroup("Admin"))
+end
+
+local function sendError(client, msg)
+    outputChatBox("DRE [Error]: " .. msg, client, 255, 50, 50)
+    triggerClientEvent(client, "editor:actionComplete", client)
+end
+
+local function checkAccess(player)
+    if not isPlayerAdmin(player) then
+        outputChatBox("DRE: You do not have 'Admin' ACL permissions to use the Editor.", player, 255, 50, 50)
+        triggerClientEvent(player, "editor:forceClose", player)
+        return false
+    end
+    return true
 end
 
 local function updateMeta(resName, action, fileName, oldFileName)
@@ -27,7 +56,6 @@ local function updateMeta(resName, action, fileName, oldFileName)
     if not meta then return false end
 
     local changed = false
-
     if action == "add" then
         local exists = false
         for _, node in ipairs(xmlNodeGetChildren(meta)) do
@@ -37,7 +65,6 @@ local function updateMeta(resName, action, fileName, oldFileName)
             local nodeType = "file"
             if fileName:match("%.lua$") then nodeType = "script"
             elseif fileName:match("%.map$") then nodeType = "map" end
-            
             local newNode = xmlCreateChild(meta, nodeType)
             xmlNodeSetAttribute(newNode, "src", fileName)
             if nodeType == "script" then xmlNodeSetAttribute(newNode, "type", "client") end
@@ -55,145 +82,248 @@ local function updateMeta(resName, action, fileName, oldFileName)
         for _, node in ipairs(xmlNodeGetChildren(meta)) do
             if xmlNodeGetAttribute(node, "src") == oldFileName then
                 xmlNodeSetAttribute(node, "src", fileName)
-                local newType = "file"
-                if fileName:match("%.lua$") then newType = "script"
-                elseif fileName:match("%.map$") then newType = "map" end
-                xmlNodeSetName(node, newType)
                 changed = true
                 break
             end
         end
     end
-
     if changed then xmlSaveFile(meta) end
     xmlUnloadFile(meta)
 end
 
 local function finishAction(client, targetRes, msg)
-    refreshResources(true)
-    local res = getResourceFromName(targetRes)
-    if res and getResourceState(res) == "running" then 
-        restartResource(res) 
-    end
+    refreshResources(false)
     if msg then outputChatBox(msg, client, 0, 255, 0) end
+    triggerClientEvent(client, "editor:actionComplete", client)
     triggerClientEvent(client, "editor:syncDirectory", client)
 end
 
 -- ==========================================
--- DATA FETCHING
+-- BACKUP SYSTEM
+-- ==========================================
+local function createBackup(resName, fileName)
+    local path = ":" .. resName .. "/" .. fileName
+    if fileExists(path) then
+        local file = fileOpen(path, true)
+        local content = fileRead(file, fileGetSize(file))
+        fileClose(file)
+
+        local t = getRealTime()
+        local ts = string.format("%04d_%02d_%02d_%02d%02d%02d", t.year+1900, t.month+1, t.monthday, t.hour, t.minute, t.second)
+        local safeFileName = fileName:gsub("/", "_")
+        local backupPath = "backups/" .. resName .. "/" .. safeFileName .. "_" .. ts .. ".backup"
+        
+        local bFile = fileCreate(backupPath)
+        if bFile then
+            fileWrite(bFile, content)
+            fileClose(bFile)
+        end
+    end
+end
+
+-- ==========================================
+-- WATCHDOG
+-- ==========================================
+local function integrityCheck()
+    local globalChange = false
+    for _, res in ipairs(getResources()) do
+        local resName = getResourceName(res)
+        local metaPath = ":" .. resName .. "/meta.xml"
+        if fileExists(metaPath) then
+            local meta = xmlLoadFile(metaPath)
+            if meta then
+                local changed = false
+                local children = xmlNodeGetChildren(meta)
+                for i = #children, 1, -1 do
+                    local src = xmlNodeGetAttribute(children[i], "src")
+                    if src and not src:find("://") and not fileExists(":" .. resName .. "/" .. src) then
+                        xmlDestroyNode(children[i])
+                        changed = true
+                        globalChange = true
+                    end
+                end
+                if changed then xmlSaveFile(meta) end
+                xmlUnloadFile(meta)
+            end
+        end
+    end
+    if globalChange then
+        for _, player in ipairs(getElementsByType("player")) do
+            if isPlayerAdmin(player) then triggerClientEvent(player, "editor:syncDirectory", player) end
+        end
+    end
+end
+setTimer(integrityCheck, 5000, 0)
+
+-- ==========================================
+-- EVENTS
 -- ==========================================
 addEvent("editor:requestResources", true)
 addEventHandler("editor:requestResources", root, function()
-    if not isPlayerAdmin(client) then return end
-    local resTable = {}
-    for _, res in ipairs(getResources()) do table.insert(resTable, getResourceName(res)) end
-    table.sort(resTable)
-    triggerClientEvent(client, "editor:receiveResources", client, resTable)
+    if not checkAccess(client) then return end
+    local resList = {}
+    for _, res in ipairs(getResources()) do table.insert(resList, getResourceName(res)) end
+    table.sort(resList)
+    triggerClientEvent(client, "editor:receiveResources", client, resList)
 end)
 
 addEvent("editor:requestFiles", true)
 addEventHandler("editor:requestFiles", root, function(resName)
-    if not isPlayerAdmin(client) then return end
-    local files = {"meta.xml"}
+    if not checkAccess(client) then return end
+    local fileList = {}
     local meta = xmlLoadFile(":" .. resName .. "/meta.xml")
     if meta then
+        table.insert(fileList, "meta.xml")
         for _, node in ipairs(xmlNodeGetChildren(meta)) do
             local src = xmlNodeGetAttribute(node, "src")
-            if src then table.insert(files, src) end
+            if src then table.insert(fileList, src) end
         end
         xmlUnloadFile(meta)
     end
-    triggerClientEvent(client, "editor:receiveFiles", client, files)
+    triggerClientEvent(client, "editor:receiveFiles", client, fileList)
 end)
 
 addEvent("editor:requestContent", true)
 addEventHandler("editor:requestContent", root, function(resName, fileName)
-    if not isPlayerAdmin(client) then return end
+    if not checkAccess(client) then return end
+    local ext = fileName:match("%.([^%.]+)$") or ""
+    if not allowedExtensions[string.lower(ext)] then return sendError(client, "Filetype not supported!") end
+
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then
         local file = fileOpen(path, true)
-        local content = fileGetSize(file) > 0 and fileRead(file, fileGetSize(file)) or ""
+        local size = fileGetSize(file)
+        if size > 1048576 then fileClose(file) return sendError(client, "File too big!") end
+        local content = size > 0 and fileRead(file, size) or ""
         fileClose(file)
         triggerClientEvent(client, "editor:receiveContent", client, content, resName, fileName)
+    else
+        sendError(client, "File not found.")
     end
 end)
 
--- ==========================================
--- FILE OPERATIONS
--- ==========================================
 addEvent("editor:saveFile", true)
 addEventHandler("editor:saveFile", root, function(resName, fileName, content)
-    if not isPlayerAdmin(client) then return end
+    if not checkAccess(client) then return end
+    createBackup(resName, fileName) -- BACKUP VOR DEM ÜBERSCHREIBEN!
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then fileDelete(path) end
     local file = fileCreate(path)
     if file then
         fileWrite(file, content)
         fileClose(file)
-        finishAction(client, resName, "Saved & Refreshed: " .. fileName)
-    else
-        outputChatBox("Error: Could not save file.", client, 255, 0, 0)
-    end
+        addLog(client, "SAVE", resName .. "/" .. fileName)
+        finishAction(client, resName, "Saved: " .. fileName)
+    else sendError(client, "Save failed.") end
 end)
 
 addEvent("editor:createFile", true)
 addEventHandler("editor:createFile", root, function(resName, fileName)
-    if not isPlayerAdmin(client) then return end
+    if not checkAccess(client) then return end
     local path = ":" .. resName .. "/" .. fileName
-    
-    if fileExists(path) then 
-        return outputChatBox("Error: File already exists! Delete it first.", client, 255, 0, 0) 
-    end
-    
+    if fileExists(path) then return sendError(client, "File exists!") end
     local file = fileCreate(path)
     if file then
         fileClose(file)
         updateMeta(resName, "add", fileName)
-        finishAction(client, resName, "Created new file: " .. fileName)
-    else
-        outputChatBox("Error: Failed to create file (Check ACL).", client, 255, 0, 0)
-    end
-end)
-
-addEvent("editor:copyFile", true)
-addEventHandler("editor:copyFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
-    if not isPlayerAdmin(client) then return end
-    local srcPath = ":" .. srcRes .. "/" .. srcFile
-    local tgtPath = ":" .. tgtRes .. "/" .. tgtFile
-    
-    if not fileExists(srcPath) then return outputChatBox("Error: Source file missing.", client, 255, 0, 0) end
-    if fileExists(tgtPath) then fileDelete(tgtPath) end
-    
-    if fileCopy(srcPath, tgtPath) then
-        updateMeta(tgtRes, "add", tgtFile)
-        finishAction(client, tgtRes, "Copied to " .. tgtRes .. " as " .. tgtFile)
-    else
-        outputChatBox("Error: Failed to copy file.", client, 255, 0, 0)
-    end
-end)
-
-addEvent("editor:renameFile", true)
-addEventHandler("editor:renameFile", root, function(resName, oldName, newName)
-    if not isPlayerAdmin(client) then return end
-    if oldName == "meta.xml" then return outputChatBox("Cannot rename meta.xml", client, 255, 0, 0) end
-    local oldPath = ":" .. resName .. "/" .. oldName
-    local newPath = ":" .. resName .. "/" .. newName
-    
-    if fileRename(oldPath, newPath) then
-        updateMeta(resName, "rename", newName, oldName)
-        finishAction(client, resName, "Renamed " .. oldName .. " to " .. newName)
+        addLog(client, "CREATE", resName .. "/" .. fileName)
+        finishAction(client, resName, "Created: " .. fileName)
     end
 end)
 
 addEvent("editor:deleteFile", true)
 addEventHandler("editor:deleteFile", root, function(resName, fileName)
-    if not isPlayerAdmin(client) then return end
-    if fileName == "meta.xml" then return outputChatBox("Cannot delete meta.xml", client, 255, 0, 0) end
+    if not checkAccess(client) or fileName == "meta.xml" then return end
+    createBackup(resName, fileName)
     local path = ":" .. resName .. "/" .. fileName
-    
     if fileExists(path) and fileDelete(path) then
         updateMeta(resName, "remove", fileName)
-        finishAction(client, resName, "Deleted file: " .. fileName)
+        addLog(client, "DELETE", resName .. "/" .. fileName)
+        finishAction(client, resName, "Deleted: " .. fileName)
+    end
+end)
+
+addEvent("editor:copyFile", true)
+addEventHandler("editor:copyFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
+    if not checkAccess(client) then return end
+    local srcPath = ":" .. srcRes .. "/" .. srcFile
+    local tgtPath = ":" .. tgtRes .. "/" .. tgtFile
+    if fileExists(tgtPath) then fileDelete(tgtPath) end
+    if fileExists(srcPath) and fileCopy(srcPath, tgtPath) then
+        updateMeta(tgtRes, "add", tgtFile)
+        addLog(client, "COPY", srcPath .. " -> " .. tgtPath)
+        finishAction(client, tgtRes, "Copied file.")
+    end
+end)
+
+addEvent("editor:renameFile", true)
+addEventHandler("editor:renameFile", root, function(resName, oldName, newName)
+    if not checkAccess(client) or oldName == "meta.xml" then return end
+    if fileRename(":"..resName.."/"..oldName, ":"..resName.."/"..newName) then
+        updateMeta(resName, "rename", newName, oldName)
+        addLog(client, "RENAME", oldName .. " -> " .. newName)
+        finishAction(client, resName, "Renamed file.")
+    end
+end)
+
+addEvent("editor:moveFile", true)
+addEventHandler("editor:moveFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
+    if not checkAccess(client) then return end
+    if fileRename(":"..srcRes.."/"..srcFile, ":"..tgtRes.."/"..tgtFile) then 
+        updateMeta(srcRes, "remove", srcFile)
+        updateMeta(tgtRes, "add", tgtFile)
+        addLog(client, "MOVE", srcFile .. " -> " .. tgtRes)
+        finishAction(client, tgtRes, "Moved file.")
+    end
+end)
+
+-- GET LOGS
+addEvent("editor:requestLogs", true)
+addEventHandler("editor:requestLogs", root, function()
+    if not checkAccess(client) then return end
+    dbQuery(function(qh, ply)
+        local res = dbPoll(qh, 0)
+        triggerClientEvent(ply, "editor:receiveLogs", ply, res)
+    end, {client}, db, "SELECT * FROM activity_logs ORDER BY id DESC LIMIT 100")
+end)
+
+-- GET ALL BACKUPS FOR A RESOURCE
+addEvent("editor:requestBackups", true)
+addEventHandler("editor:requestBackups", root, function(resName)
+    if not checkAccess(client) then return end
+    -- Wir holen alle SAVE und DELETE Aktionen der Ressource aus der Datenbank
+    dbQuery(function(qh, ply)
+        local res = dbPoll(qh, 0)
+        triggerClientEvent(ply, "editor:receiveBackups", ply, res)
+    end, {client}, db, "SELECT time, action, details FROM activity_logs WHERE action IN ('SAVE', 'DELETE') AND details LIKE ? ORDER BY id DESC LIMIT 50", resName .. "/%")
+end)
+
+-- RESTORE BACKUP
+addEvent("editor:restoreBackup", true)
+addEventHandler("editor:restoreBackup", root, function(resName, details, timestamp)
+    if not checkAccess(client) then return end
+    
+    local fileName = details:sub(#resName + 2) -- Schneidet 'resName/' vom Anfang ab
+    local ts = timestamp:gsub("-", "_"):gsub(":", ""):gsub(" ", "_")
+    local safeFileName = fileName:gsub("/", "_")
+    local backupPath = "backups/" .. resName .. "/" .. safeFileName .. "_" .. ts .. ".backup"
+    
+    if fileExists(backupPath) then
+        local bFile = fileOpen(backupPath, true)
+        local content = fileRead(bFile, fileGetSize(bFile))
+        fileClose(bFile)
+        
+        local path = ":" .. resName .. "/" .. fileName
+        if fileExists(path) then fileDelete(path) end
+        local nFile = fileCreate(path)
+        fileWrite(nFile, content)
+        fileClose(nFile)
+        
+        updateMeta(resName, "add", fileName)
+        addLog(client, "RESTORE", resName .. "/" .. fileName)
+        finishAction(client, resName, "Restored backup of: " .. fileName)
+    else
+        sendError(client, "Backup file missing on disk!")
     end
 end)
 
@@ -206,51 +336,29 @@ local function downloadFile(index, newVersion, player)
         restartResource(getThisResource())
         return
     end
-
     local fileName = FILES_TO_UPDATE[index]
-    
     fetchRemote(GITHUB_RAW_URL .. fileName, function(responseData, errorNo)
         if errorNo == 0 then
             if fileExists(fileName) then fileDelete(fileName) end
-            
             local file = fileCreate(fileName)
             if file then
                 fileWrite(file, responseData)
                 fileClose(file)
                 outputChatBox("[Updater] Downloaded: " .. fileName, player or root, 200, 200, 200)
-                
-                -- Download the next file in the list
                 downloadFile(index + 1, newVersion, player)
-            else
-                outputChatBox("[Updater] Error: Could not save " .. fileName, player or root, 255, 0, 0)
             end
-        else
-            outputChatBox("[Updater] HTTP Error " .. errorNo .. " while downloading " .. fileName, player or root, 255, 0, 0)
         end
     end)
 end
 
 addCommandHandler("updateeditor", function(player)
-    if not isPlayerAdmin(player) then return end
-    
-    outputChatBox("[Updater] Checking GitHub for updates...", player, 0, 200, 255)
-    
+    if not checkAccess(player) then return end
     fetchRemote(GITHUB_RAW_URL .. "version.txt", function(responseData, errorNo)
         if errorNo == 0 then
             local remoteVersion = tonumber(responseData)
-            
-            if remoteVersion then
-                if remoteVersion > CURRENT_VERSION then
-                    outputChatBox("[Updater] New version found! (v" .. remoteVersion .. "). Starting download...", player, 0, 255, 0)
-                    downloadFile(1, remoteVersion, player)
-                else
-                    outputChatBox("[Updater] Dynamic Resource Editor is up to date (v" .. CURRENT_VERSION .. ").", player, 0, 255, 0)
-                end
-            else
-                outputChatBox("[Updater] Error: version.txt on GitHub is not a valid number.", player, 255, 0, 0)
+            if remoteVersion and remoteVersion > CURRENT_VERSION then
+                downloadFile(1, remoteVersion, player)
             end
-        else
-            outputChatBox("[Updater] Failed to reach GitHub (Error: " .. errorNo .. ").", player, 255, 0, 0)
         end
     end)
 end)
