@@ -121,7 +121,6 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             
             triggerServerEvent("editor:saveFile", localPlayer, res, file, finalContent)
             
-            -- FIX: Hier ist das Grün-Färben und Ausblenden des Ladekreises wieder!
             if editorBrowser then
                 executeBrowserJavascript(editorBrowser, "updateStatus('Saved Successfully', '#4CAF50'); actionComplete();")
             end
