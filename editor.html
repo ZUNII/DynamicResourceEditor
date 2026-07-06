@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Resource Editor</title>
+    
+    <link rel="stylesheet" href="codemirror.min.css">
+    <link rel="stylesheet" href="material-darker.min.css">
+    <script src="codemirror.min.js"></script>
+    <script src="lua.min.js"></script>
+    
+    <link rel="stylesheet" href="dialog.min.css">
+    <script src="dialog.min.js"></script>
+    <script src="searchcursor.min.js"></script>
+    <script src="search.min.js"></script>
+    <script src="clike.min.js"></script> 
+    <script src="xml.min.js"></script> 
+    
+    <style>
+        :root {
+            --bg-sidebar: #1e1e1e; --bg-editor: #232323; --bg-active: #2a2d2e;
+            --accent: #007acc; --text-main: #cccccc; --text-muted: #717171; --border: #3c3c3c;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body, html { height: 100%; font-family: 'Segoe UI', sans-serif; background: transparent; color: var(--text-main); overflow: hidden; }
+
+        .vscode-container {
+            position: absolute; top: 5%; left: 5%; width: 90%; height: 90%;
+            background-color: var(--bg-editor); border: 1px solid var(--border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; border-radius: 4px; overflow: hidden;
+        }
+
+        .titlebar { height: 35px; background-color: #323233; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; justify-content: space-between; }
+        .title { font-size: 12px; font-weight: 600; }
+        .window-controls button { background: none; border: none; color: #ff5252; cursor: pointer; font-size: 16px; font-weight: bold; }
+
+        .workspace { flex: 1; display: flex; min-height: 0; }
+        .sidebar { width: 300px; background-color: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .search-box { padding: 10px; }
+        .search-box input { width: 100%; padding: 6px 10px; background: #3c3c3c; border: 1px solid var(--border); color: #fff; font-size: 12px; outline: none; border-radius: 2px; }
+
+        .list-section { flex: 1; overflow-y: auto; padding: 5px 0; border-bottom: 1px solid var(--border); height: 50%; }
+        .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-muted); padding: 5px 12px; border-bottom: 1px solid #252526; background: #252526; position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between;}
+        
+        .list-container { padding: 2px 0; }
+        .list-item { padding: 6px 16px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .list-item:hover { background-color: var(--bg-active); }
+        .list-item.selected { background-color: #04395e; color: #fff; }
+
+        .sidebar-actions { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: #1a1a1a; }
+        .btn-side { padding: 6px; font-size: 11px; background: #333; border: 1px solid var(--border); color: #fff; cursor: pointer; border-radius: 2px; }
+        .btn-side:hover { background: var(--accent); }
+
+        .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        
+        /* TABS SYSTEM */
+        .tabs-bar { height: 35px; background-color: #252526; display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); }
+        .tab { padding: 0 15px; display: flex; align-items: center; background: #2d2d2d; border-right: 1px solid var(--border); color: #969696; font-size: 12px; cursor: pointer; min-width: 100px; justify-content: space-between;}
+        .tab.active { background: var(--bg-editor); color: #fff; border-top: 2px solid var(--accent); }
+        .tab-close { margin-left: 10px; border-radius: 50%; width: 16px; height: 16px; text-align: center; line-height: 14px; font-size: 10px; }
+        .tab-close:hover { background: #555; color: #ff5252; }
+
+        .editor-toolbar { height: 35px; background-color: #2d2d2d; display: flex; align-items: center; padding: 0 10px; gap: 8px; border-bottom: 1px solid var(--border); }
+        .btn-action { background: var(--accent); border: none; color: #fff; padding: 4px 12px; font-size: 12px; cursor: pointer; border-radius: 2px; }
+        .btn-action:hover { filter: brightness(1.2); }
+        .btn-action.secondary { background: #444; }
+        
+        .custom-dropdown { position: relative; display: inline-block; margin-right: auto; }
+        .dropdown-content { display: none; position: absolute; background-color: #252526; min-width: 220px; box-shadow: 0px 8px 16px rgba(0,0,0,0.5); z-index: 9999; border: 1px solid #3c3c3c; border-radius: 4px; top: 100%; left: 0; }
+        .show { display: block; }
+        .dropdown-content div { padding: 8px 12px; cursor: pointer; font-size: 12px; color: #ccc; }
+        .dropdown-content div:hover { background-color: var(--accent); color: #fff; }
+
+        #editor-wrapper { flex: 1; position: relative; width: 100%; height: 100%; }
+        #inspector-wrapper { flex: 1; position: relative; width: 100%; height: 100%; padding: 20px; background: #1e1e1e; overflow-y: auto; }
+        .CodeMirror { position: absolute; top: 0; left: 0; right: 0; bottom: 0; height: 100%; font-family: 'Consolas', monospace; font-size: 14px; }
+        
+        /* VS Code Highlighting */
+        .cm-s-material-darker.CodeMirror { background: #1e1e1e !important; color: #d4d4d4 !important; }
+        .cm-s-material-darker .CodeMirror-gutters { background: #1e1e1e !important; border-right: 1px solid #333 !important; }
+        .cm-s-material-darker .cm-keyword { color: #C586C0 !important; } 
+        .cm-s-material-darker .cm-builtin, .cm-s-material-darker .cm-def { color: #DCDCAA !important; } 
+        .cm-s-material-darker .cm-string { color: #CE9178 !important; } 
+        .cm-s-material-darker .cm-number { color: #B5CEA8 !important; } 
+        .cm-s-material-darker .cm-comment { color: #6A9955 !important; } 
+        .cm-s-material-darker .cm-variable, .cm-s-material-darker .cm-variable-2, .cm-s-material-darker .cm-property { color: #9CDCFE !important; } 
+        .cm-s-material-darker .cm-tag { color: #569cd6 !important; } 
+        .cm-s-material-darker .cm-attribute { color: #9cdcfe !important; } 
+
+        .statusbar { min-height: 28px; background-color: var(--accent); color: #fff; display: flex; align-items: center; padding: 4px 15px; font-size: 12px; justify-content: space-between; }
+        .status-left { display: flex; gap: 15px; }
+
+        .context-menu { position: absolute; background: #252526; border: 1px solid var(--border); display: none; flex-direction: column; z-index: 1000; padding: 4px 0; min-width: 150px; }
+        .context-menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; color: #ccc;}
+        .context-menu-item:hover { background: var(--accent); color: #fff; }
+
+        .modal-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9998; display: none; justify-content: center; align-items: center; }
+        .modal-box { background: #252526; border: 1px solid #3c3c3c; width: 350px; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .modal-input, .modal-select { width: 100%; background: #3c3c3c; border: 1px solid #555; color: #fff; padding: 6px; font-size: 12px; outline: none; }
+        
+        /* INSPECTOR TABLE */
+        .inspector-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; color: #fff; }
+        .inspector-table td { padding: 6px; border-bottom: 1px solid #333; font-size: 13px; }
+        .inspector-table td.label { color: var(--text-muted); width: 30%; }
+
+        .logs-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .logs-table th, .logs-table td { border: 1px solid #444; padding: 4px; font-size: 11px; text-align: left; }
+        .logs-table th { background: #333; }
+
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10000; display: none; flex-direction: column; justify-content: center; align-items: center; cursor: wait; }
+        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="vscode-container">
+    <div class="titlebar">
+        <div class="title">Dynamic Resource Editor - Admin Mode</div>
+        <div class="window-controls"><button class="btn-close" onclick="triggerMTA('editor:onRequestClose')">✕</button></div>
+    </div>
+
+    <div class="workspace">
+        <div class="sidebar">
+            <div class="search-box"><input type="text" id="searchRes" placeholder="Filter resources..." oninput="filterResources()"></div>
+            
+            <div class="list-section">
+                <div class="section-title">Resources <span style="cursor:pointer;" onclick="triggerMTA('editor:requestLogs')" title="Activity Logs">📜</span></div>
+                <div id="resources-list" class="list-container"></div>
+            </div>
+            
+            <div class="list-section">
+                <div class="section-title">Files <span style="font-size:10px; color:var(--text-muted);">[CTRL+Click for Multi]</span></div>
+                <div id="files-list" class="list-container"></div>
+            </div>
+
+            <div class="sidebar-actions">
+                <button class="btn-side" onclick="promptAction('create')">📄 New</button>
+                <button class="btn-side" onclick="promptCopy()">⎘ Copy</button>
+                <button class="btn-side" onclick="ctxRename()">✏️ Rename</button>
+                <button class="btn-side" onclick="promptAction('delete')" style="color: #ff5252;">✕ Delete</button>
+                <button class="btn-side" onclick="triggerMTA('editor:onStartObjectSelection')" style="color: #4CAF50; grid-column: span 2;">🎯 Select Object</button>
+                <button class="btn-side" onclick="promptRestoreResource()" style="color:#FF9800; grid-column: span 2;">⟲ Backups</button>
+            </div>
+        </div>
+
+        <div class="editor-area">
+            <div class="tabs-bar" id="tabs-bar"></div>
+            <div class="editor-toolbar" id="editor-toolbar-area">
+                <div class="custom-dropdown">
+                    <button class="btn-action secondary" onclick="toggleTplDropdown(event)">Templates ▾</button>
+                    <div class="dropdown-content" id="tpl-menu">
+                        <div onclick="insertTemplate('jump')">Jump Marker</div>
+                        <div onclick="insertTemplate('tp')">Teleport Marker</div>
+                        <div onclick="insertTemplate('bw')">BW Bounce Marker</div>
+                        <div onclick="insertTemplate('pushtp')">PushTo Marker</div>
+                        <div onclick="insertTemplate('slowmo')">SlowMo Marker</div>
+                        <div onclick="insertTemplate('exprot')">Explosion Rotation Marker</div>
+                        <div onclick="insertTemplate('rotmod')">Rotation Modifier Marker</div>
+                        <div onclick="insertTemplate('revblow')">Reverse Blow Marker</div>
+                    </div>
+                </div>
+                <button class="btn-action" onclick="saveActiveTab()">Save File</button>
+                <button class="btn-action secondary" onclick="revertActiveTab()">Revert</button>
+            </div>
+            <div id="editor-wrapper"><textarea id="code"></textarea></div>
+            <div id="inspector-wrapper" style="display: none;"></div>
+        </div>
+    </div>
+
+    <div class="statusbar">
+        <div class="status-left"><span id="status-text">Ready</span><span id="file-info">-</span></div>
+        <div class="status-right" id="file-mode">Mode</div>
+    </div>
+    
+    <div id="loading-overlay" class="loading-overlay"><div class="spinner"></div><div id="loading-text" style="color:#fff; margin-top:10px;">Processing...</div></div>
+
+    <div id="custom-modal" class="modal-overlay">
+        <div class="modal-box" id="modal-box-inner">
+            <div class="modal-title" id="modal-title">Title</div>
+            <div class="modal-text" id="modal-text">Message</div>
+            <input type="text" id="modal-input" class="modal-input">
+            <select id="modal-select" class="modal-select" size="6"></select>
+            <div class="modal-footer">
+                <button class="btn-action secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-action" onclick="confirmModal()">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="context-menu" class="context-menu">
+    <div class="context-menu-item" onclick="promptCopy()">Copy to...</div>
+    <div class="context-menu-item" onclick="ctxRename()">Rename</div>
+    <div class="context-menu-item" onclick="promptAction('delete')" style="color:#ff5252;">Delete</div>
+</div>
+
+<script>
+    let editor;
+    let allResources = [];
+    let selectedResource = null;
+    
+    // MULTI-SELECTION STATE
+    let selectedFile = null;
+    let ctxTargetFile = null; 
+    let selectedFiles = []; 
+    
+    let modalCallback = null;
+    let openTabs = [];
+    let activeTabId = null;
+
+    // FIX FOR MTA CEF CTRL KEY
+    let isCtrlPressed = false;
+    document.addEventListener('keydown', (e) => { if(e.key === 'Control' || e.keyCode === 17) isCtrlPressed = true; });
+    document.addEventListener('keyup', (e) => { if(e.key === 'Control' || e.keyCode === 17) isCtrlPressed = false; });
+    window.addEventListener('blur', () => { isCtrlPressed = false; }); // Prevents getting stuck when tabbing out
+
+    document.addEventListener("DOMContentLoaded", function() {
+        editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+            lineNumbers: true, mode: "lua", theme: "material-darker",
+            lineWrapping: true, indentUnit: 4, matchBrackets: true
+        });
+
+        editor.on("change", () => {
+            if(activeTabId) {
+                let tab = openTabs.find(t => t.id === activeTabId);
+                if(tab && !tab.isInspector && editor.getValue() !== tab.originalContent) {
+                    triggerMTA("editor:onEditorStatus", "Edited (*)", "#9C27B0");
+                }
+            }
+        });
+
+        document.addEventListener("click", (e) => {
+            if(!e.target.closest('.context-menu')) document.getElementById("context-menu").style.display = "none";
+            if(!e.target.closest('.custom-dropdown')) {
+                let tpl = document.getElementById("tpl-menu");
+                if(tpl && tpl.classList.contains('show')) tpl.classList.remove('show');
+            }
+        });
+        
+        setTimeout(() => { triggerMTA("editor:onUIReady"); }, 300);
+    });
+
+    function triggerMTA(evt, ...args) { if (typeof mta !== "undefined") mta.triggerEvent(evt, ...args); }
+    function showLoading(txt) { document.getElementById('loading-text').innerText = txt; document.getElementById('loading-overlay').style.display = 'flex'; }
+    function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+    function actionComplete() { hideLoading(); }
+    function updateStatus(txt, col) { document.getElementById("status-text").innerText = txt; if(col) document.querySelector(".statusbar").style.background = col; }
+
+    // --- OBJECT INSPECTOR TAB ---
+    function showObjectProperties(model, x, y, z, rx, ry, rz, interior, dimension) {
+        let id = "INSPECTOR::ObjectProps";
+        let tab = openTabs.find(t => t.id === id);
+        
+        let snippetText = `local x, y, z = ${x}, ${y}, ${z}\nlocal rx, ry, rz = ${rx}, ${ry}, ${rz}`;
+        
+        let htmlContent = `
+            <div style="color: #fff; max-width: 550px;">
+                <h2 style="color: #4CAF50; margin-bottom: 15px; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">🎯 Object Properties</h2>
+                <table class="inspector-table">
+                    <tr><td class="label">Model ID</td><td style="font-weight:bold;">${model}</td></tr>
+                    <tr><td class="label">Position X</td><td style="font-family:monospace;">${x}</td></tr>
+                    <tr><td class="label">Position Y</td><td style="font-family:monospace;">${y}</td></tr>
+                    <tr><td class="label">Position Z</td><td style="font-family:monospace;">${z}</td></tr>
+                    <tr><td class="label">Rotation X</td><td style="font-family:monospace;">${rx}</td></tr>
+                    <tr><td class="label">Rotation Y</td><td style="font-family:monospace;">${ry}</td></tr>
+                    <tr><td class="label">Rotation Z</td><td style="font-family:monospace;">${rz}</td></tr>
+                    <tr><td class="label">Interior</td><td>${interior}</td></tr>
+                    <tr><td class="label">Dimension</td><td>${dimension}</td></tr>
+                </table>
+                <h3 style="font-size: 12px; margin-bottom: 5px; color: #aaa;">Generated Code Snippet:</h3>
+                <textarea id="ins-snippet" readonly style="width: 100%; height: 60px; background: #2d2d2d; color: #CE9178; border: 1px solid var(--border); padding: 8px; font-family: monospace; font-size: 12px; resize: none; outline: none; margin-bottom: 10px;">${snippetText}</textarea>
+                <button class="btn-action" onclick="copyInspectorCode()" style="width:100%; background:#4CAF50;">Copy to Clipboard</button>
+            </div>
+        `;
+
+        if(!tab) {
+            tab = { id: id, res: "INSPECTOR", file: "Properties", isInspector: true, html: htmlContent };
+            openTabs.push(tab);
+        } else {
+            tab.html = htmlContent;
+        }
+        switchTab(id);
+    }
+
+    function copyInspectorCode() {
+        let copyText = document.getElementById("ins-snippet");
+        copyText.select();
+        document.execCommand("copy");
+        updateStatus("Code copied!", "#4CAF50");
+        setTimeout(() => updateStatus("Ready", "#007acc"), 2000);
+    }
+
+    // --- TEMPLATE LOGIC ---
+    function toggleTplDropdown(e) { e.stopPropagation(); document.getElementById("tpl-menu").classList.toggle("show"); }
+    function getNextIndex(prefix) {
+        let content = editor.getValue(); let regex = new RegExp(prefix + "(\\d+)", "g");
+        let match; let maxIdx = 0;
+        while ((match = regex.exec(content)) !== null) { let num = parseInt(match[1]); if (num > maxIdx) maxIdx = num; }
+        return maxIdx + 1;
+    }
+
+    function insertTemplate(type) {
+        if(!type || !editor) return;
+        let code = "";
+        if (type === "jump") {
+            let idx = getNextIndex("jumpMarker");
+            code = `\n-- Jump Marker ${idx}\nlocal jumpMarker${idx} = createMarker(0, 0, 0, "corona", 5, 255, 255, 255, 255)\n\nfunction onJumpMarkerHit${idx}(player)\n    if player == localPlayer and isPedInVehicle(player) then\n        local vehicle = getPedOccupiedVehicle(player)\n        if vehicle then\n            setElementVelocity(vehicle, 0, 0, 0)\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", jumpMarker${idx}, onJumpMarkerHit${idx})\n`;
+        } else if (type === "tp") {
+            let idx = getNextIndex("tpMarker");
+            code = `\n-- Teleport Marker ${idx}\n-- EDIT HERE: tpMarker${idx} = teleport start location\nlocal tpMarker${idx} = createMarker( 3134.3603515625, -2051.8212890625, 3.4948999881744, "corona", 1, 255, 255, 255, 255, true)\n\naddEventHandler("onClientMarkerHit", tpMarker${idx}, function(h)\n    if h == localPlayer and isPedInVehicle(localPlayer) then\n        local v = getPedOccupiedVehicle(localPlayer)\n        local velX, velY, velZ = getElementVelocity(v)\n        setElementPosition(v, 2901.6953125, -2051.6232910156, 3.5480000972748)\n        setElementVelocity(v, velX, velY, velZ)\n        setElementFrozen(v, true)\n        setTimer(setElementFrozen, 50, 1, v, false)\n    end\nend)\n`;
+        } else if (type === "bw") {
+            let idx = getNextIndex("backwardsMarker");
+            code = `\n-- BW Bounce Marker ${idx}\nlocal backwardsMarker${idx} = createMarker(0, 0, 0, "corona", 7, 0, 0, 0, 0)\n\naddEventHandler("onClientMarkerHit", root, function(hitElement, sameDimension)\n    if (hitElement ~= localPlayer or not sameDimension) then return end\n    local vehicle = getPedOccupiedVehicle(localPlayer)\n    if not vehicle then return end\n    local velX, velY, velZ = getElementVelocity(vehicle)\n    local speed = 0\n    if (source == backwardsMarker${idx}) then\n         setElementVelocity(vehicle, -velX * speed, -velY * speed, -velZ * speed)\n    end\nend)\n`;
+        } else if (type === "pushtp") {
+            let idx = getNextIndex("pushMarker");
+            code = `\n-- PushTo Marker ${idx}\nlocal pushMarker${idx} = createMarker(0, 0, 0, "corona", 1, 155, 155, 155, 155)\n\nfunction pushVehicleToPoint${idx}(hitPlayer)\n    if hitPlayer == localPlayer and source == pushMarker${idx} then\n        local vehicle = getPedOccupiedVehicle(hitPlayer)\n        if vehicle then\n            local targetX, targetY, targetZ = 0, 0, 0\n            local vx, vy, vz = getElementPosition(vehicle)\n            local dx, dy, dz = targetX - vx, targetY - vy, targetZ - vz\n            local distH = math.sqrt(dx*dx + dy*dy)\n            if distH > 0 then\n                local forceH = 1\n                local forceV = 0  \n                setElementVelocity(vehicle, (dx/distH) * forceH, (dy/distH) * forceH, (dz/distH) * forceH + forceV)\n            end\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", pushMarker${idx}, pushVehicleToPoint${idx})\n`;
+        } else if (type === "slowmo") {
+            let idx = getNextIndex("slowStartMarker");
+            code = `\n-- SlowMo Marker ${idx}\nlocal slowStartMarker${idx}\nlocal slowStopMarker${idx}\nfunction initSlowmoMarkers${idx}()\n	slowStartMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, 255, true)\n	slowStopMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, 255, true)\nend\naddEventHandler("onClientResourceStart", getResourceRootElement(getThisResource()), initSlowmoMarkers${idx})\nfunction onSlowmoMarkerHit${idx}(hitPlayer, matchingDimension)\n	local vehicle = getPedOccupiedVehicle ( hitPlayer )\n	if hitPlayer ~= localPlayer then return end\n	if source == slowStartMarker${idx} then setGameSpeed(0.30)\n	elseif source == slowStopMarker${idx} then setGameSpeed(1) end\nend\naddEventHandler("onClientMarkerHit", root, onSlowmoMarkerHit${idx})\n`;
+        } else if (type === "exprot") {
+            let idx = getNextIndex("expRotMarker");
+            code = `\n-- Explosion Rotation Marker ${idx}\nlocal expRotMarker${idx} = createMarker(0, 0, 0, "corona", 5, 255, 0, 0, 255)\n\nfunction onExpRotMarkerHit${idx}(player)\n    if player == localPlayer and isPedInVehicle(player) then\n        local vehicle = getPedOccupiedVehicle(player)\n        if vehicle then\n            local targetRotZ = 0\n            local tolerance = 30\n            local _, _, rz = getElementRotation(vehicle)\n            local diff = math.abs(rz - targetRotZ)\n            if diff > 180 then diff = 360 - diff end\n            if diff > tolerance then\n                local x, y, z = getElementPosition(vehicle)\n                createExplosion(x, y, z, 7)\n                setElementHealth(vehicle, 0)\n            end\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", expRotMarker${idx}, onExpRotMarkerHit${idx})\n`;
+        } else if (type === "rotmod") {
+            let idx = getNextIndex("rotModMarker");
+            code = `\n-- Rotation Modifier Marker ${idx}\nlocal rotModMarker${idx} = createMarker(0, 0, 0, "corona", 5, 0, 255, 255, 255)\n\nfunction onRotModMarkerHit${idx}(player)\n    if player == localPlayer and isPedInVehicle(player) then\n        local vehicle = getPedOccupiedVehicle(player)\n        if vehicle then\n            local targetRX, targetRY, targetRZ = 0, 0, 0\n            local vx, vy, vz = getElementVelocity(vehicle)\n            setElementRotation(vehicle, targetRX, targetRY, targetRZ)\n            setElementVelocity(vehicle, vx, vy, vz)\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", rotModMarker${idx}, onRotModMarkerHit${idx})\n`;
+        } else if (type === "revblow") {
+            let idx = getNextIndex("isVehicleReversing");
+            code = `\n-- Reverse Blow Marker ${idx}\nfunction isVehicleReversing${idx}(theVehicle)\n    local getMatrix = getElementMatrix (theVehicle)\n    local getVelocity = Vector3 (getElementVelocity(theVehicle))\n    local getVectorDirection = (getVelocity.x * getMatrix) + (getVelocity.y * getMatrix) + (getVelocity.z * getMatrix) \n    if (getVectorDirection >= 0) then return false; end\n    return true;\nend\nfunction onRevBlowMarkerHit${idx}(hitPlayer, matchingDimension)\n    if hitPlayer == localPlayer and isPedInVehicle(hitPlayer) then\n        local vehicle = getPedOccupiedVehicle(hitPlayer)\n        local r,g,b,a = getMarkerColor(source)\n        if r == 255 and g == 0 and b == 0 and a == 0 then\n            if not isVehicleReversing${idx}(vehicle) then blowVehicle(vehicle) end\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", root, onRevBlowMarkerHit${idx})\n`;
+        }
+
+        let doc = editor.getDoc(); doc.replaceRange(code, doc.getCursor());
+        document.getElementById("tpl-menu").classList.remove("show"); editor.focus();
+    }
+
+    // --- TABS LOGIC ---
+    function getTabId(res, file) { return res + "::" + file; }
+
+    function setEditorContent(content, fileName, resName) {
+        hideLoading(); let id = getTabId(resName, fileName); let tab = openTabs.find(t => t.id === id);
+        if(!tab) {
+            tab = { id: id, res: resName, file: fileName, content: content, originalContent: content, cursor: {line:0,ch:0}, isInspector: false };
+            openTabs.push(tab);
+        } else { tab.content = content; tab.originalContent = content; }
+        switchTab(id);
+    }
+
+    function switchTab(id) {
+        if(activeTabId) {
+            let curr = openTabs.find(t => t.id === activeTabId);
+            if(curr && !curr.isInspector) { curr.content = editor.getValue(); curr.cursor = editor.getCursor(); }
+        }
+        activeTabId = id; let tab = openTabs.find(t => t.id === id);
+        
+        if (tab.isInspector) {
+            document.getElementById("editor-wrapper").style.display = "none";
+            document.getElementById("editor-toolbar-area").style.display = "none";
+            let ins = document.getElementById("inspector-wrapper");
+            ins.style.display = "block"; ins.innerHTML = tab.html;
+            
+            selectedResource = null; selectedFile = null;
+            document.getElementById("file-info").innerText = "Object Inspector";
+            document.getElementById("file-mode").innerText = "Inspector Mode";
+            renderTabs(); return;
+        }
+
+        document.getElementById("editor-wrapper").style.display = "block";
+        document.getElementById("editor-toolbar-area").style.display = "flex";
+        document.getElementById("inspector-wrapper").style.display = "none";
+
+        selectedResource = tab.res; selectedFile = tab.file; ctxTargetFile = tab.file; 
+        document.getElementById("file-info").innerText = `${tab.res}/${tab.file}`;
+        
+        let ext = tab.file.split('.').pop().toLowerCase();
+        let mode = "lua"; let dName = "Lua Mode";
+        if(ext==='fx'||ext==='hlsl'){ mode="text/x-c++src"; dName="FX/Shader Mode"; }
+        else if(ext==='xml'||ext==='html'||ext==='map'){ mode="application/xml"; dName="XML/HTML Mode"; }
+        
+        editor.setOption("mode", mode); document.getElementById("file-mode").innerText = dName;
+        editor.setValue(tab.content); editor.setCursor(tab.cursor);
+        updateStatus("Opened", "#007acc"); renderTabs();
+    }
+
+    function closeTab(id) {
+        openTabs = openTabs.filter(t => t.id !== id);
+        if(activeTabId === id) {
+            if(openTabs.length > 0) switchTab(openTabs[openTabs.length-1].id);
+            else { activeTabId = null; editor.setValue(""); document.getElementById("file-info").innerText="-"; renderTabs(); }
+        } else renderTabs();
+    }
+
+    function renderTabs() {
+        let bar = document.getElementById("tabs-bar"); bar.innerHTML = "";
+        openTabs.forEach(t => {
+            let d = document.createElement("div"); d.className = "tab" + (t.id === activeTabId ? " active" : "");
+            d.innerHTML = `${t.file} <span class="tab-close" onclick="event.stopPropagation(); closeTab('${t.id}')">✕</span>`;
+            d.onclick = () => switchTab(t.id); bar.appendChild(d);
+        });
+    }
+
+    function saveActiveTab() {
+        if(!activeTabId) return; let tab = openTabs.find(t => t.id === activeTabId); if(tab.isInspector) return;
+        showLoading("Saving..."); let content = editor.getValue(); let chunkSize = 16000; let totalChunks = Math.ceil(content.length / chunkSize);
+        if (totalChunks === 0) { triggerMTA("editor:onRequestSave", tab.res, tab.file, "", 1, 1); return; }
+        for (let i = 0; i < totalChunks; i++) {
+            triggerMTA("editor:onRequestSave", tab.res, tab.file, content.substring(i * chunkSize, (i + 1) * chunkSize), i + 1, totalChunks);
+        }
+    }
+
+    function revertActiveTab() { if(!activeTabId) return; let tab = openTabs.find(t => t.id === activeTabId); if(!tab.isInspector) editor.setValue(tab.originalContent); }
+
+    // --- MODALS ---
+    function showLogsModal(logs) {
+        let html = `<div style="max-height:300px; overflow-y:auto;"><table class="logs-table"><tr><th>Time</th><th>Admin</th><th>Action</th><th>Details</th></tr>`;
+        logs.forEach(l => { html += `<tr><td>${l.time}</td><td>${l.admin}</td><td>${l.action}</td><td>${l.details}</td></tr>`; });
+        html += `</table></div>`; document.getElementById('modal-box-inner').style.width = "600px";
+        openModal("Activity Logs", "", false, false, "", null); document.getElementById('modal-text').innerHTML = html;
+    }
+
+    function promptRestoreResource() { if (!selectedResource) return showAlert("Please select a resource first!"); showLoading("Fetching backups..."); triggerMTA("editor:requestBackups", selectedResource); }
+
+    function showBackupModal(backups) {
+        hideLoading(); if(!backups || backups.length === 0) return showAlert("No backups found for this resource!");
+        document.getElementById('modal-box-inner').style.width = "400px";
+        openModal("Restore Backup", `Select a backup to restore for '${selectedResource}':`, false, true, "", (val, selObj) => {
+            if(selObj) { let parts = selObj.split("|"); showLoading("Restoring..."); triggerMTA("editor:restoreBackup", selectedResource, parts[1], parts[0]); }
+        });
+        let sel = document.getElementById('modal-select'); sel.innerHTML = "";
+        backups.forEach(b => {
+            let opt = document.createElement('option'); opt.value = b.time + "|" + b.details; opt.text = `[${b.time}] ${b.details.substring(selectedResource.length + 1)} (${b.action})`; sel.appendChild(opt);
+        });
+    }
+
+    function openModal(title, text, showInput, showSelect, defVal, cb) {
+        document.getElementById('modal-title').innerText = title; document.getElementById('modal-text').innerHTML = text;
+        const inp = document.getElementById('modal-input'); const sel = document.getElementById('modal-select');
+        inp.style.display = showInput ? 'block' : 'none'; sel.style.display = showSelect ? 'block' : 'none';
+        if(showInput) inp.value = defVal || '';
+        if(showSelect && title !== "Restore Backup") {
+            sel.innerHTML = '';
+            allResources.forEach(res => {
+                let opt = document.createElement('option'); opt.value = res; opt.text = res; if(res === selectedResource) opt.selected = true; sel.appendChild(opt);
+            });
+        }
+        modalCallback = cb; document.getElementById('custom-modal').style.display = 'flex';
+    }
+    function confirmModal() { if(modalCallback) modalCallback(document.getElementById('modal-input').value, document.getElementById('modal-select').value); closeModal(); }
+    function closeModal() { document.getElementById('custom-modal').style.display = 'none'; document.getElementById('modal-box-inner').style.width="320px"; modalCallback = null; }
+    function showAlert(msg) { updateStatus(msg, "#ff5252"); setTimeout(() => updateStatus("Ready", "#007acc"), 3000); }
+
+    // --- SIDEBAR & FILE SYSTEM ---
+    function setResources(resList) { allResources = Array.isArray(resList) ? resList : []; filterResources(); }
+    function filterResources() {
+        const q = document.getElementById("searchRes").value.toLowerCase(); const list = document.getElementById("resources-list"); list.innerHTML = "";
+        allResources.forEach(res => {
+            if (res.toLowerCase().includes(q)) {
+                let div = document.createElement("div"); div.className = "list-item" + (selectedResource === res ? " selected" : ""); div.innerText = res;
+                div.onclick = () => { selectedResource = res; filterResources(); showLoading("Fetching..."); triggerMTA("editor:requestFiles", res); };
+                list.appendChild(div);
+            }
+        });
+    }
+
+    function setFiles(files) {
+        hideLoading(); clearFileSelections();
+        const list = document.getElementById("files-list"); list.innerHTML = "";
+        if(!files || files.length === 0) return list.innerHTML = "<div style='padding:10px; color:#717171;'>No files</div>";
+        
+        files.sort().forEach(file => {
+            let div = document.createElement("div"); div.className = "list-item"; div.innerText = "📄 " + file; 
+            
+            div.oncontextmenu = (e) => {
+                e.preventDefault(); 
+                let isAlreadySelected = selectedFiles.includes(file);
+                if (!isAlreadySelected) { clearFileSelections(); selectVisualFile(div, file, false); }
+                const menu = document.getElementById("context-menu");
+                menu.style.display = "flex"; menu.style.left = e.pageX + "px"; menu.style.top = e.pageY + "px";
+            };
+            
+            div.onclick = (e) => { selectVisualFile(div, file, e.ctrlKey); };
+            div.ondblclick = () => { showLoading("Loading..."); triggerMTA("editor:requestContent", selectedResource, file); };
+            list.appendChild(div);
+        });
+    }
+    
+    function selectVisualFile(domItem, file, isMulti) {
+        if (isCtrlPressed) isMulti = true;
+
+        if (!isMulti) {
+            document.querySelectorAll('#files-list .list-item').forEach(i => i.classList.remove('selected'));
+            selectedFiles = [file];
+        } else {
+            if (selectedFiles.includes(file)) {
+                selectedFiles = selectedFiles.filter(f => f !== file);
+                domItem.classList.remove('selected');
+                if(selectedFiles.length > 0) {
+                    selectedFile = selectedFiles[selectedFiles.length - 1];
+                    ctxTargetFile = selectedFile;
+                } else { selectedFile = null; ctxTargetFile = null; }
+                return;
+            } else {
+                selectedFiles.push(file);
+            }
+        }
+        domItem.classList.add('selected');
+        selectedFile = file; ctxTargetFile = file; 
+    }
+
+    function clearFileSelections() { selectedFiles = []; selectedFile = null; ctxTargetFile = null; }
+
+    // --- ACTIONS ---
+    function promptAction(action) {
+        if (!selectedResource) return showAlert("Select resource first!");
+        if (action === "create") {
+            openModal("New File", "Filename (e.g. core.lua):", true, false, "", (val) => { if(val.trim()) { showLoading("Creating..."); triggerMTA("editor:createFile", selectedResource, val.trim()); } });
+        } else if (action === "delete") {
+            let targets = selectedFiles.length > 0 ? selectedFiles : [selectedFile];
+            targets = targets.filter(t => t);
+            if (targets.length === 0) return showAlert("Select files to delete first!");
+            if (targets.includes("meta.xml")) return showAlert("meta.xml cannot be deleted!");
+            
+            openModal("Delete Files", `Delete ${targets.length} selected file(s)?`, false, false, "", () => {
+                showLoading("Deleting...");
+                targets.forEach(t => triggerMTA("editor:deleteFile", selectedResource, t));
+            });
+        }
+    }
+
+    function ctxRename() {
+        let target = ctxTargetFile || selectedFile; if(!target) return showAlert("Select a file first!");
+        if (target === "meta.xml") return showAlert("meta.xml cannot be renamed!");
+        openModal("Rename File", `Rename '${target}' to:`, true, false, target, (val) => { if(val.trim() && val !== target) { showLoading("Renaming..."); triggerMTA("editor:renameFile", selectedResource, target, val.trim()); } });
+    }
+
+    function promptCopy() {
+        let targets = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+        if(targets.length === 0) return showAlert("Select files to copy!");
+
+        if (targets.length === 1) {
+            let target = targets[0];
+            openModal("Copy File", `Save '${target}' as:`, true, true, target, (name, targetRes) => {
+                if(name.trim() && targetRes) { showLoading("Copying..."); triggerMTA("editor:copyFile", selectedResource, target, targetRes, name.trim()); }
+            });
+        } else {
+            openModal("Copy Multiple Files", `Copy all ${targets.length} marked files to selected resource?`, false, true, "", (dummy, targetRes) => {
+                if(targetRes) {
+                    showLoading("Copying files...");
+                    // FIX: Pass as string with "|" delimiter
+                    let fileString = targets.join("|");
+                    triggerMTA("editor:copyMultipleFiles", selectedResource, fileString, targetRes);
+                }
+            });
+        }
+    }
+    
+    function syncDirectory() { if (selectedResource) triggerMTA("editor:requestFiles", selectedResource); }
+</script>
+</body>
+</html>

@@ -29,7 +29,17 @@ function createEditorPanel()
     end
 end
 
+-- Declaration here so it can be found in toggleEditor
+local isSelectingObject = false
+local performObjectSelection
+
 function toggleEditor(state)
+    if isSelectingObject and state then
+        -- Cancel selection if user presses F2 during object selection
+        isSelectingObject = false
+        unbindKey("mouse1", "up", performObjectSelection)
+    end
+
     if state then
         if not editorGui then createEditorPanel() else
             if not guiGetVisible(editorGui) then
@@ -170,3 +180,59 @@ addEventHandler("editor:requestBackups", root, function(res) triggerServerEvent(
 
 addEvent("editor:restoreBackup", true)
 addEventHandler("editor:restoreBackup", root, function(res, details, ts) triggerServerEvent("editor:restoreBackup", localPlayer, res, details, ts) end)
+
+addEvent("editor:copyMultipleFiles", true)
+addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes) 
+    triggerServerEvent("editor:copyMultipleFiles", localPlayer, sRes, filesData, tRes) 
+end)
+
+-- ==========================================
+-- OBJECT INSPECTOR (Select Object Logic)
+-- ==========================================
+performObjectSelection = function(button, state)
+    if not isSelectingObject then return end
+    
+    local sw, sh = guiGetScreenSize()
+    local camX, camY, camZ = getCameraMatrix()
+    -- Calculate a point far ahead in the camera crosshair
+    local endX, endY, endZ = getWorldFromScreenPosition(sw/2, sh/2, 100) 
+    
+    -- Cast a raycast from the camera position to the crosshair position
+    local hit, hitX, hitY, hitZ, hitElement = processLineOfSight(camX, camY, camZ, endX, endY, endZ, true, true, true, true, true, false, false, false, localPlayer)
+    
+    isSelectingObject = false
+    -- IMPORTANT: Event is now bound to "up"
+    unbindKey("mouse1", "up", performObjectSelection)
+    
+    if hit and hitElement and getElementType(hitElement) == "object" then
+        local model = getElementModel(hitElement)
+        local x, y, z = getElementPosition(hitElement)
+        local rx, ry, rz = getElementRotation(hitElement)
+        local int = getElementInterior(hitElement)
+        local dim = getElementDimension(hitElement)
+        
+        local js = string.format("showObjectProperties(%d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d)", 
+            model, x, y, z, rx, ry, rz, int, dim)
+        
+        if isElement(editorBrowser) then
+            executeBrowserJavascript(editorBrowser, js)
+        end
+        
+        -- Delay to avoid accidentally closing the editor immediately due to UI bugs
+        setTimer(function() toggleEditor(true) end, 150, 1)
+    else
+        -- Restore editor even if it failed
+        setTimer(function() toggleEditor(true) end, 150, 1)
+    end
+end
+
+addEvent("editor:onStartObjectSelection", true)
+addEventHandler("editor:onStartObjectSelection", root, function()
+    if isSelectingObject then return end
+    isSelectingObject = true
+    
+    toggleEditor(false) -- CLOSE EDITOR for clear view / free camera
+    
+    -- "up" prevents accidental closing when clicking!
+    bindKey("mouse1", "up", performObjectSelection)
+end)

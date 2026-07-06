@@ -5,7 +5,7 @@ local allowedExtensions = {
     ["js"] = true, ["css"] = true, ["txt"] = true, ["json"] = true, ["fx"] = true, ["hlsl"] = true
 }
 
-local CURRENT_VERSION = 2.0
+local CURRENT_VERSION = 2.1
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ZUNII/DynamicResourceEditor/main/"
 
 local FILES_TO_UPDATE = {
@@ -122,42 +122,41 @@ local function createBackup(resName, fileName)
 end
 
 -- ==========================================
--- WATCHDOG
+-- EVENTS (INCL. MULTI-COPY)
 -- ==========================================
-local function integrityCheck()
-    local globalChange = false
-    for _, res in ipairs(getResources()) do
-        local resName = getResourceName(res)
-        local metaPath = ":" .. resName .. "/meta.xml"
-        if fileExists(metaPath) then
-            local meta = xmlLoadFile(metaPath)
-            if meta then
-                local changed = false
-                local children = xmlNodeGetChildren(meta)
-                for i = #children, 1, -1 do
-                    local src = xmlNodeGetAttribute(children[i], "src")
-                    if src and not src:find("://") and not fileExists(":" .. resName .. "/" .. src) then
-                        xmlDestroyNode(children[i])
-                        changed = true
-                        globalChange = true
+addEvent("editor:copyMultipleFiles", true)
+addEventHandler("editor:copyMultipleFiles", root, function(sourceResName, filesData, targetResName)
+    if not checkAccess(client) then return end
+    
+    local files = {}
+    
+    -- Extract delimiter and convert to table
+    if type(filesData) == "string" then
+        files = split(filesData, "|")
+    end
+    
+    if type(files) == "table" and #files > 0 then
+        local count = 0
+        for _, fileName in ipairs(files) do
+            if fileName and fileName ~= "" then
+                local srcPath = ":" .. sourceResName .. "/" .. fileName
+                local tgtPath = ":" .. targetResName .. "/" .. fileName
+                if fileExists(srcPath) then
+                    if fileExists(tgtPath) then fileDelete(tgtPath) end
+                    if fileCopy(srcPath, tgtPath) then
+                        updateMeta(targetResName, "add", fileName)
+                        count = count + 1
                     end
                 end
-                if changed then xmlSaveFile(meta) end
-                xmlUnloadFile(meta)
             end
         end
+        addLog(client, "MULTI-COPY", "From " .. sourceResName .. " to " .. targetResName .. " (" .. count .. " files)")
+        finishAction(client, targetResName, "Successfully copied " .. count .. " files.")
+    else
+        sendError(client, "Failed to read file list. Please try again.")
     end
-    if globalChange then
-        for _, player in ipairs(getElementsByType("player")) do
-            if isPlayerAdmin(player) then triggerClientEvent(player, "editor:syncDirectory", player) end
-        end
-    end
-end
-setTimer(integrityCheck, 5000, 0)
+end)
 
--- ==========================================
--- EVENTS
--- ==========================================
 addEvent("editor:requestResources", true)
 addEventHandler("editor:requestResources", root, function()
     if not checkAccess(client) then return end
@@ -188,7 +187,6 @@ addEventHandler("editor:requestContent", root, function(resName, fileName)
     if not checkAccess(client) then return end
     local ext = fileName:match("%.([^%.]+)$") or ""
     if not allowedExtensions[string.lower(ext)] then return sendError(client, "Filetype not supported!") end
-
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then
         local file = fileOpen(path, true)
@@ -205,7 +203,7 @@ end)
 addEvent("editor:saveFile", true)
 addEventHandler("editor:saveFile", root, function(resName, fileName, content)
     if not checkAccess(client) then return end
-    createBackup(resName, fileName) -- BACKUP VOR DEM ÜBERSCHREIBEN!
+    createBackup(resName, fileName)
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then fileDelete(path) end
     local file = fileCreate(path)
@@ -263,66 +261,6 @@ addEventHandler("editor:renameFile", root, function(resName, oldName, newName)
         updateMeta(resName, "rename", newName, oldName)
         addLog(client, "RENAME", oldName .. " -> " .. newName)
         finishAction(client, resName, "Renamed file.")
-    end
-end)
-
-addEvent("editor:moveFile", true)
-addEventHandler("editor:moveFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
-    if not checkAccess(client) then return end
-    if fileRename(":"..srcRes.."/"..srcFile, ":"..tgtRes.."/"..tgtFile) then 
-        updateMeta(srcRes, "remove", srcFile)
-        updateMeta(tgtRes, "add", tgtFile)
-        addLog(client, "MOVE", srcFile .. " -> " .. tgtRes)
-        finishAction(client, tgtRes, "Moved file.")
-    end
-end)
-
--- GET LOGS
-addEvent("editor:requestLogs", true)
-addEventHandler("editor:requestLogs", root, function()
-    if not checkAccess(client) then return end
-    dbQuery(function(qh, ply)
-        local res = dbPoll(qh, 0)
-        triggerClientEvent(ply, "editor:receiveLogs", ply, res)
-    end, {client}, db, "SELECT * FROM activity_logs ORDER BY id DESC LIMIT 100")
-end)
-
--- GET ALL BACKUPS FOR A RESOURCE
-addEvent("editor:requestBackups", true)
-addEventHandler("editor:requestBackups", root, function(resName)
-    if not checkAccess(client) then return end
-    dbQuery(function(qh, ply)
-        local res = dbPoll(qh, 0)
-        triggerClientEvent(ply, "editor:receiveBackups", ply, res)
-    end, {client}, db, "SELECT time, action, details FROM activity_logs WHERE action IN ('SAVE', 'DELETE') AND details LIKE ? ORDER BY id DESC LIMIT 50", resName .. "/%")
-end)
-
--- RESTORE BACKUP
-addEvent("editor:restoreBackup", true)
-addEventHandler("editor:restoreBackup", root, function(resName, details, timestamp)
-    if not checkAccess(client) then return end
-    
-    local fileName = details:sub(#resName + 2)
-    local ts = timestamp:gsub("-", "_"):gsub(":", ""):gsub(" ", "_")
-    local safeFileName = fileName:gsub("/", "_")
-    local backupPath = "backups/" .. resName .. "/" .. safeFileName .. "_" .. ts .. ".backup"
-    
-    if fileExists(backupPath) then
-        local bFile = fileOpen(backupPath, true)
-        local content = fileRead(bFile, fileGetSize(bFile))
-        fileClose(bFile)
-        
-        local path = ":" .. resName .. "/" .. fileName
-        if fileExists(path) then fileDelete(path) end
-        local nFile = fileCreate(path)
-        fileWrite(nFile, content)
-        fileClose(nFile)
-        
-        updateMeta(resName, "add", fileName)
-        addLog(client, "RESTORE", resName .. "/" .. fileName)
-        finishAction(client, resName, "Restored backup of: " .. fileName)
-    else
-        sendError(client, "Backup file missing on disk!")
     end
 end)
 
