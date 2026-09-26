@@ -128,7 +128,7 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             if file and string.find(file, "%.lua$") then
                 local func, err = loadstring(finalContent)
                 if not func then
-                    executeBrowserJavascript(editorBrowser, "updateStatus('SYNTAXFEHLER', '#ff5252'); actionComplete();")
+                    executeBrowserJavascript(editorBrowser, "updateStatus('SYNTAX ERROR', '#ff5252'); actionComplete();")
                     return
                 end
             end
@@ -136,7 +136,7 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             triggerServerEvent("editor:saveFile", localPlayer, res, file, finalContent)
             
             if editorBrowser then
-                executeBrowserJavascript(editorBrowser, "updateStatus('Erfolgreich gespeichert', '#4CAF50'); actionComplete();")
+                executeBrowserJavascript(editorBrowser, "updateStatus('Saved Successfully', '#4CAF50'); actionComplete();")
             end
         end, 50, 1)
     end
@@ -153,7 +153,7 @@ addEventHandler("editor:syncDirectory", root, function()
     executeBrowserJavascript(editorBrowser, "syncDirectory();")
 end)
 
--- INTERFACE-EVENTS
+-- INTERFACE EVENTS
 addEvent("editor:requestFiles", true)
 addEventHandler("editor:requestFiles", root, function(res) triggerServerEvent("editor:requestFiles", localPlayer, res) end)
 
@@ -190,7 +190,7 @@ addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes
 end)
 
 -- ==============================================================
--- MATHEMATICS
+-- MATHEMATICAL UTILITIES
 -- ==============================================================
 local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
@@ -203,7 +203,7 @@ local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
 end
 
 -- ==============================================================
--- MARKER DETECTION
+-- PRECISE MARKER POSITION RESOLUTION
 -- ==============================================================
 local function getElementWorldPosition(element)
     if isElement(element) then
@@ -301,7 +301,7 @@ local function getElementProperties(element)
 end
 
 -- ==============================================================
--- TARGET FINDING THROUGH CAMERA ALIGMENT
+-- TARGET DETECTION VIA CAMERA ALIGNMENT
 -- ==============================================================
 local function findCrosshairTarget()
     local cx, cy, cz, lx, ly, lz = getCameraMatrix()
@@ -319,6 +319,7 @@ local function findCrosshairTarget()
     local bestDist = 999999
     local chosenElement = nil
 
+    -- 1. Scan markers & KMST elements
     local markerList = {}
     for _, marker in ipairs(getElementsByType("marker")) do table.insert(markerList, marker) end
     
@@ -351,11 +352,13 @@ local function findCrosshairTarget()
         return chosenElement
     end
 
+    -- 2. Physical raycast for regular objects
     local hit, hx, hy, hz, hitEl = processLineOfSight(cx, cy, cz, ex, ey, ez, true, true, true, true, true, false, false, false, localPlayer)
     if hit and hitEl and isElement(hitEl) then
         return hitEl
     end
 
+    -- 3. Fallback for map objects
     for _, obj in ipairs(getElementsByType("object", root, true)) do
         local ox, oy, oz = getElementPosition(obj)
         local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, ox, oy, oz)
@@ -372,7 +375,7 @@ local function findCrosshairTarget()
 end
 
 -- ==============================================================
--- SELECTION-CLICK-HANDLER
+-- SELECTION EVENT HANDLER
 -- ==============================================================
 onSelectionClick = function()
     if not isSelectingObject then return end
