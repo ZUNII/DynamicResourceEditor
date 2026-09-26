@@ -75,7 +75,7 @@ bindKey("F2", "down", function()
     end
 end)
 
--- SYNCHRONISATION (SERVER -> CEF)
+-- SYNC (SERVER -> CEF)
 addEvent("editor:receiveResources", true)
 addEventHandler("editor:receiveResources", root, function(resList)
     if editorBrowser and type(resList) == "table" then
@@ -111,7 +111,7 @@ addEventHandler("editor:actionComplete", root, function()
     if editorBrowser then executeBrowserJavascript(editorBrowser, "actionComplete();") end
 end)
 
--- RÜCKMELDUNGEN (CEF -> LUA)
+-- FEEDBACK (CEF -> LUA)
 addEvent("editor:onEditorStatus", true)
 addEventHandler("editor:onEditorStatus", root, function(text, color)
     if editorBrowser then executeBrowserJavascript(editorBrowser, "updateStatus('"..text.."', '"..color.."')") end
@@ -153,7 +153,7 @@ addEventHandler("editor:syncDirectory", root, function()
     executeBrowserJavascript(editorBrowser, "syncDirectory();")
 end)
 
--- SCHNITTSTELLEN-EVENTS
+-- INTERFACE-EVENTS
 addEvent("editor:requestFiles", true)
 addEventHandler("editor:requestFiles", root, function(res) triggerServerEvent("editor:requestFiles", localPlayer, res) end)
 
@@ -190,7 +190,7 @@ addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes
 end)
 
 -- ==============================================================
--- MATHEMATISCHE BERECHNUNGEN
+-- MATHEMATICS
 -- ==============================================================
 local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
@@ -203,10 +203,9 @@ local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
 end
 
 -- ==============================================================
--- PRÄZISE MARKER-POSITIONSBESTIMMUNG
+-- MARKER DETECTION
 -- ==============================================================
 local function getElementWorldPosition(element)
-    -- 1. Direkt getElementPosition aufrufen, falls natives Marker-/Kind-Element
     if isElement(element) then
         local px, py, pz = getElementPosition(element)
         if px and py and pz and (px ~= 0 or py ~= 0 or pz ~= 0) then
@@ -214,7 +213,6 @@ local function getElementWorldPosition(element)
         end
     end
 
-    -- 2. Wenn Parent, sichtbares Kind-Element prüfen
     for _, child in ipairs(getElementChildren(element)) do
         local cx, cy, cz = getElementPosition(child)
         if cx and cy and cz and (cx ~= 0 or cy ~= 0 or cz ~= 0) then
@@ -222,13 +220,11 @@ local function getElementWorldPosition(element)
         end
     end
 
-    -- 3. Rückgriff auf posX, posY, posZ
     local x = tonumber(getElementData(element, "posX"))
     local y = tonumber(getElementData(element, "posY"))
     local z = tonumber(getElementData(element, "posZ"))
     if x and y and z then return x, y, z end
 
-    -- 4. Rückgriff auf "position"-Zeichenkette
     local rawPos = getElementData(element, "position")
     if type(rawPos) == "string" then
         local parts = split(rawPos, ",")
@@ -305,7 +301,7 @@ local function getElementProperties(element)
 end
 
 -- ==============================================================
--- ZIELSUCHE DURCH KAMERA-AUSRICHTUNG
+-- TARGET FINDING THROUGH CAMERA ALIGMENT
 -- ==============================================================
 local function findCrosshairTarget()
     local cx, cy, cz, lx, ly, lz = getCameraMatrix()
@@ -323,7 +319,6 @@ local function findCrosshairTarget()
     local bestDist = 999999
     local chosenElement = nil
 
-    -- 1. Marker & KMST-Marker scannen
     local markerList = {}
     for _, marker in ipairs(getElementsByType("marker")) do table.insert(markerList, marker) end
     
@@ -356,13 +351,11 @@ local function findCrosshairTarget()
         return chosenElement
     end
 
-    -- 2. Physischer Raycast für Standard-Objekte
     local hit, hx, hy, hz, hitEl = processLineOfSight(cx, cy, cz, ex, ey, ez, true, true, true, true, true, false, false, false, localPlayer)
     if hit and hitEl and isElement(hitEl) then
         return hitEl
     end
 
-    -- 3. Rückgriff auf Karten-Objekte
     for _, obj in ipairs(getElementsByType("object", root, true)) do
         local ox, oy, oz = getElementPosition(obj)
         local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, ox, oy, oz)
@@ -379,7 +372,7 @@ local function findCrosshairTarget()
 end
 
 -- ==============================================================
--- AUSWAHL-KLICK-HANDLER
+-- SELECTION-CLICK-HANDLER
 -- ==============================================================
 onSelectionClick = function()
     if not isSelectingObject then return end
