@@ -5,13 +5,14 @@ local allowedExtensions = {
     ["js"] = true, ["css"] = true, ["txt"] = true, ["json"] = true, ["fx"] = true, ["hlsl"] = true
 }
 
-local CURRENT_VERSION = 2.1
+local CURRENT_VERSION = 2.7
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ZUNII/DynamicResourceEditor/main/"
 
 local FILES_TO_UPDATE = {
     "server.lua", "client.lua", "meta.xml", "web/editor.html", 
-    "web/codemirror.min.js", "web/codemirror.min.css", "web/lua.min.js", "web/material-darker.min.css",
-    "web/search.js", "web/searchcursor.js", "web/dialog.js", "web/dialog.css", "web/clike.js", "web/xml.js"
+    "web/codemirror.min.css", "web/material-darker.min.css", "web/codemirror.min.js", "web/lua.min.js", 
+    "web/dialog.min.css", "web/dialog.min.js", "web/searchcursor.min.js", "web/search.min.js", 
+    "web/clike.min.js", "web/xml.min.js"
 }
 
 -- ==========================================
@@ -48,6 +49,20 @@ local function checkAccess(player)
         return false
     end
     return true
+end
+
+-- Check if resource is zipped or read-only
+local function isResourceZipped(resName)
+    local metaPath = ":" .. resName .. "/meta.xml"
+    if not fileExists(metaPath) then 
+        return false 
+    end
+    local testFile = fileOpen(metaPath, false)
+    if not testFile then
+        return true
+    end
+    fileClose(testFile)
+    return false
 end
 
 local function updateMeta(resName, action, fileName, oldFileName)
@@ -128,9 +143,11 @@ addEvent("editor:copyMultipleFiles", true)
 addEventHandler("editor:copyMultipleFiles", root, function(sourceResName, filesData, targetResName)
     if not checkAccess(client) then return end
     
-    local files = {}
+    if isResourceZipped(targetResName) then
+        return sendError(client, "Target resource '" .. targetResName .. "' is a ZIP archive! Unzip it on the server to edit/copy files.")
+    end
     
-    -- Extract delimiter and convert to table
+    local files = {}
     if type(filesData) == "string" then
         files = split(filesData, "|")
     end
@@ -203,6 +220,9 @@ end)
 addEvent("editor:saveFile", true)
 addEventHandler("editor:saveFile", root, function(resName, fileName, content)
     if not checkAccess(client) then return end
+    if isResourceZipped(resName) then
+        return sendError(client, "Resource '" .. resName .. "' is zipped! Unzip it on the server to save files.")
+    end
     createBackup(resName, fileName)
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then fileDelete(path) end
@@ -218,6 +238,9 @@ end)
 addEvent("editor:createFile", true)
 addEventHandler("editor:createFile", root, function(resName, fileName)
     if not checkAccess(client) then return end
+    if isResourceZipped(resName) then
+        return sendError(client, "Resource is zipped! Unzip it on the server.")
+    end
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) then return sendError(client, "File exists!") end
     local file = fileCreate(path)
@@ -232,6 +255,9 @@ end)
 addEvent("editor:deleteFile", true)
 addEventHandler("editor:deleteFile", root, function(resName, fileName)
     if not checkAccess(client) or fileName == "meta.xml" then return end
+    if isResourceZipped(resName) then
+        return sendError(client, "Resource is zipped!")
+    end
     createBackup(resName, fileName)
     local path = ":" .. resName .. "/" .. fileName
     if fileExists(path) and fileDelete(path) then
@@ -244,6 +270,9 @@ end)
 addEvent("editor:copyFile", true)
 addEventHandler("editor:copyFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
     if not checkAccess(client) then return end
+    if isResourceZipped(tgtRes) then
+        return sendError(client, "Target resource is zipped!")
+    end
     local srcPath = ":" .. srcRes .. "/" .. srcFile
     local tgtPath = ":" .. tgtRes .. "/" .. tgtFile
     if fileExists(tgtPath) then fileDelete(tgtPath) end
@@ -257,10 +286,72 @@ end)
 addEvent("editor:renameFile", true)
 addEventHandler("editor:renameFile", root, function(resName, oldName, newName)
     if not checkAccess(client) or oldName == "meta.xml" then return end
+    if isResourceZipped(resName) then
+        return sendError(client, "Resource is zipped!")
+    end
     if fileRename(":"..resName.."/"..oldName, ":"..resName.."/"..newName) then
         updateMeta(resName, "rename", newName, oldName)
         addLog(client, "RENAME", oldName .. " -> " .. newName)
         finishAction(client, resName, "Renamed file.")
+    end
+end)
+
+addEvent("editor:moveFile", true)
+addEventHandler("editor:moveFile", root, function(srcRes, srcFile, tgtRes, tgtFile)
+    if not checkAccess(client) then return end
+    if isResourceZipped(tgtRes) or isResourceZipped(srcRes) then
+        return sendError(client, "Resource is zipped!")
+    end
+    if fileRename(":"..srcRes.."/"..srcFile, ":"..tgtRes.."/"..tgtFile) then 
+        updateMeta(srcRes, "remove", srcFile)
+        updateMeta(tgtRes, "add", tgtFile)
+        addLog(client, "MOVE", srcFile .. " -> " .. tgtRes)
+        finishAction(client, tgtRes, "Moved file.")
+    end
+end)
+
+addEvent("editor:requestLogs", true)
+addEventHandler("editor:requestLogs", root, function()
+    if not checkAccess(client) then return end
+    dbQuery(function(qh, ply)
+        local res = dbPoll(qh, 0)
+        triggerClientEvent(ply, "editor:receiveLogs", ply, res)
+    end, {client}, db, "SELECT * FROM activity_logs ORDER BY id DESC LIMIT 100")
+end)
+
+addEvent("editor:requestBackups", true)
+addEventHandler("editor:requestBackups", root, function(resName)
+    if not checkAccess(client) then return end
+    dbQuery(function(qh, ply)
+        local res = dbPoll(qh, 0)
+        triggerClientEvent(ply, "editor:receiveBackups", ply, res)
+    end, {client}, db, "SELECT time, action, details FROM activity_logs WHERE action IN ('SAVE', 'DELETE') AND details LIKE ? ORDER BY id DESC LIMIT 50", resName .. "/%")
+end)
+
+addEvent("editor:restoreBackup", true)
+addEventHandler("editor:restoreBackup", root, function(resName, details, timestamp)
+    if not checkAccess(client) then return end
+    local fileName = details:sub(#resName + 2)
+    local ts = timestamp:gsub("-", "_"):gsub(":", ""):gsub(" ", "_")
+    local safeFileName = fileName:gsub("/", "_")
+    local backupPath = "backups/" .. resName .. "/" .. safeFileName .. "_" .. ts .. ".backup"
+    
+    if fileExists(backupPath) then
+        local bFile = fileOpen(backupPath, true)
+        local content = fileRead(bFile, fileGetSize(bFile))
+        fileClose(bFile)
+        
+        local path = ":" .. resName .. "/" .. fileName
+        if fileExists(path) then fileDelete(path) end
+        local nFile = fileCreate(path)
+        fileWrite(nFile, content)
+        fileClose(nFile)
+        
+        updateMeta(resName, "add", fileName)
+        addLog(client, "RESTORE", resName .. "/" .. fileName)
+        finishAction(client, resName, "Restored backup of: " .. fileName)
+    else
+        sendError(client, "Backup file missing on disk!")
     end
 end)
 
