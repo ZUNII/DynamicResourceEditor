@@ -29,30 +29,30 @@ function createEditorPanel()
     end
 end
 
--- Declaration here so it can be found in toggleEditor
 local isSelectingObject = false
-local performObjectSelection
 
-function toggleEditor(state)
+function toggleEditor(state, skipResourceFetch)
     if isSelectingObject and state then
-        -- Cancel selection if user presses F2 during object selection
         isSelectingObject = false
-        unbindKey("mouse1", "up", performObjectSelection)
     end
 
     if state then
-        if not editorGui then createEditorPanel() else
+        if not editorGui then 
+            createEditorPanel() 
+        else
             if not guiGetVisible(editorGui) then
                 guiSetVisible(editorGui, true)
                 showCursor(true)
                 focusBrowser(editorBrowser)
                 isMinimized = false
             end
-            triggerServerEvent("editor:requestResources", localPlayer)
+            if not skipResourceFetch then
+                triggerServerEvent("editor:requestResources", localPlayer)
+            end
         end
         toggleInput(true)
     else
-        if editorGui then
+        if editorGui and guiGetVisible(editorGui) then
             guiSetVisible(editorGui, false)
             showCursor(false)
             toggleInput(false)
@@ -65,8 +65,14 @@ addEvent("editor:forceClose", true)
 addEventHandler("editor:forceClose", root, function() toggleEditor(false) end)
 
 bindKey("F2", "down", function()
-    local state = not (editorGui and guiGetVisible(editorGui))
-    toggleEditor(state)
+    local isCurrentlyOpen = (editorGui and guiGetVisible(editorGui))
+    if isCurrentlyOpen then
+        toggleEditor(false)
+        cancelEvent()
+    else
+        toggleEditor(true)
+        cancelEvent()
+    end
 end)
 
 -- SYNC (SERVER -> CEF)
@@ -134,7 +140,6 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             if editorBrowser then
                 executeBrowserJavascript(editorBrowser, "updateStatus('Saved Successfully', '#4CAF50'); actionComplete();")
             end
-            
         end, 50, 1)
     end
 end)
@@ -186,53 +191,126 @@ addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes
     triggerServerEvent("editor:copyMultipleFiles", localPlayer, sRes, filesData, tRes) 
 end)
 
--- ==========================================
--- OBJECT INSPECTOR (Select Object Logic)
--- ==========================================
-performObjectSelection = function(button, state)
+-- ==============================================================
+-- MATHEMATICAL 3D RAY-TO-POINT DISTANCE (FOR ACCURATE MARKERS)
+-- ==============================================================
+local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
+    local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
+    local magSq = dx * dx + dy * dy + dz * dz
+    if magSq == 0 then return 999999 end
+    local u = ((px - rx1) * dx + (py - ry1) * dy + (pz - rz1) * dz) / magSq
+    if u < 0 then u = 0 elseif u > 1 then u = 1 end
+    local nx, ny, nz = rx1 + u * dx, ry1 + u * dy, rz1 + u * dz
+    return getDistanceBetweenPoints3D(px, py, pz, nx, ny, nz)
+end
+
+-- ==============================================================
+-- UNIVERSAL SELECTION (MARKER PRIORITY & MAP-EDITOR SUPPORT)
+-- ==============================================================
+addEventHandler("onClientClick", root, function(button, state, absoluteX, absoluteY, worldX, worldY, worldZ, clickedElement)
     if not isSelectingObject then return end
-    
-    local sw, sh = guiGetScreenSize()
-    local camX, camY, camZ = getCameraMatrix()
-    -- Calculate a point far ahead in the camera crosshair
-    local endX, endY, endZ = getWorldFromScreenPosition(sw/2, sh/2, 100) 
-    
-    -- Cast a raycast from the camera position to the crosshair position
-    local hit, hitX, hitY, hitZ, hitElement = processLineOfSight(camX, camY, camZ, endX, endY, endZ, true, true, true, true, true, false, false, false, localPlayer)
+    if button ~= "left" or state ~= "down" then return end
     
     isSelectingObject = false
-    -- IMPORTANT: Event is now bound to "up"
-    unbindKey("mouse1", "up", performObjectSelection)
-    
-    if hit and hitElement and getElementType(hitElement) == "object" then
-        local model = getElementModel(hitElement)
-        local x, y, z = getElementPosition(hitElement)
-        local rx, ry, rz = getElementRotation(hitElement)
-        local int = getElementInterior(hitElement)
-        local dim = getElementDimension(hitElement)
-        
-        local js = string.format("showObjectProperties(%d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d)", 
-            model, x, y, z, rx, ry, rz, int, dim)
-        
-        if isElement(editorBrowser) then
-            executeBrowserJavascript(editorBrowser, js)
+
+    local targetElement = nil
+    local camX, camY, camZ = getCameraMatrix()
+    local endX, endY, endZ = getWorldFromScreenPosition(absoluteX, absoluteY, 300)
+
+    -- Step 1: Search through all markers & map editor representation elements first
+    local candidateElements = {}
+    for _, marker in ipairs(getElementsByType("marker")) do table.insert(candidateElements, marker) end
+    for _, pickup in ipairs(getElementsByType("pickup")) do table.insert(candidateElements, pickup) end
+
+    local bestDistToRay = 999999
+    local closestRayElement = nil
+
+    for _, el in ipairs(candidateElements) do
+        local ex, ey, ez = getElementPosition(el)
+        local distFromCam = getDistanceBetweenPoints3D(camX, camY, camZ, ex, ey, ez)
+        if distFromCam < 300 then
+            local distRay = getDistanceToRay(ex, ey, ez, camX, camY, camZ, endX, endY, endZ)
+            local allowedRadius = 4.0
+            if getElementType(el) == "marker" then
+                local mSize = getMarkerSize(el) or 2.0
+                allowedRadius = math.max(3.0, mSize * 1.5)
+            end
+            
+            if distRay <= allowedRadius and distRay < bestDistToRay then
+                bestDistToRay = distRay
+                closestRayElement = el
+            end
         end
-        
-        -- Delay to avoid accidentally closing the editor immediately due to UI bugs
-        setTimer(function() toggleEditor(true) end, 150, 1)
-    else
-        -- Restore editor even if it failed
-        setTimer(function() toggleEditor(true) end, 150, 1)
     end
-end
+
+    if closestRayElement then
+        targetElement = closestRayElement
+    end
+
+    -- Step 2: If no marker was selected, check directly clicked entity
+    if not targetElement and clickedElement and isElement(clickedElement) then
+        targetElement = clickedElement
+    end
+
+    -- Step 3: Raycast for physical world objects
+    if not targetElement then
+        local hit, hx, hy, hz, hitEl = processLineOfSight(camX, camY, camZ, endX, endY, endZ, true, true, true, true, true, false, false, false, localPlayer)
+        if hit and hitEl and isElement(hitEl) then
+            targetElement = hitEl
+        end
+    end
+
+    -- Step 4: Screen space fallback for nearby objects
+    if not targetElement then
+        local minScreenDist = 999999
+        for _, obj in ipairs(getElementsByType("object", root, true)) do
+            if isElementOnScreen(obj) then
+                local ox, oy, oz = getElementPosition(obj)
+                local sx, sy = getScreenFromWorldPosition(ox, oy, oz)
+                if sx and sy then
+                    local sDist = getDistanceBetweenPoints2D(absoluteX, absoluteY, sx, sy)
+                    if sDist < 60 and sDist < minScreenDist then
+                        minScreenDist = sDist
+                        targetElement = obj
+                    end
+                end
+            end
+        end
+    end
+
+    -- Extract exact F3 properties
+    if targetElement and isElement(targetElement) then
+        local elType = getElementType(targetElement)
+        local model = 0
+        
+        if elType == "object" or elType == "vehicle" or elType == "pickup" then
+            model = getElementModel(targetElement)
+        elseif elType == "marker" then
+            model = '"' .. tostring(getMarkerType(targetElement)) .. '"'
+        end
+
+        local x, y, z = getElementPosition(targetElement)
+        local rx, ry, rz = getElementRotation(targetElement)
+        local int = getElementInterior(targetElement)
+        local dim = getElementDimension(targetElement)
+
+        toggleEditor(true, true)
+
+        setTimer(function()
+            if isElement(editorBrowser) then
+                local js = string.format("showObjectProperties(%s, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d);", 
+                    tostring(model), x, y, z, rx, ry, rz, int, dim)
+                executeBrowserJavascript(editorBrowser, js)
+            end
+        end, 100, 1)
+    else
+        toggleEditor(true)
+    end
+end)
 
 addEvent("editor:onStartObjectSelection", true)
 addEventHandler("editor:onStartObjectSelection", root, function()
-    if isSelectingObject then return end
     isSelectingObject = true
-    
-    toggleEditor(false) -- CLOSE EDITOR for clear view / free camera
-    
-    -- "up" prevents accidental closing when clicking!
-    bindKey("mouse1", "up", performObjectSelection)
+    toggleEditor(false)
+    showCursor(true)
 end)
