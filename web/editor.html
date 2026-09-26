@@ -14,7 +14,8 @@
     <script src="searchcursor.min.js"></script>
     <script src="search.min.js"></script>
     <script src="clike.min.js"></script> 
-    <script src="xml.min.js"></script> 
+    <!-- FIX: Name muss exakt mit der Datei im Ordner Ã¼bereinstimmen (xml.js) -->
+    <script src="xml.js"></script> 
     
     <style>
         :root {
@@ -23,7 +24,7 @@
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-        body, html { height: 100%; font-family: 'Segoe UI', sans-serif; background: transparent; color: var(--text-main); overflow: hidden; }
+        body, html { height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: transparent; color: var(--text-main); overflow: hidden; }
 
         .vscode-container {
             position: absolute; top: 5%; left: 5%; width: 90%; height: 90%;
@@ -44,17 +45,29 @@
         .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-muted); padding: 5px 12px; border-bottom: 1px solid #252526; background: #252526; position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between;}
         
         .list-container { padding: 2px 0; }
-        .list-item { padding: 6px 16px; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        /* FIX: justify-content auf flex-start gesetzt, damit der Dateiname direkt neben dem Icon steht */
+        .list-item { 
+            padding: 6px 16px; 
+            font-size: 13px; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center;
+            justify-content: flex-start; 
+            gap: 8px;
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+        }
         .list-item:hover { background-color: var(--bg-active); }
         .list-item.selected { background-color: #04395e; color: #fff; }
 
         .sidebar-actions { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: #1a1a1a; }
-        .btn-side { padding: 6px; font-size: 11px; background: #333; border: 1px solid var(--border); color: #fff; cursor: pointer; border-radius: 2px; }
+        .btn-side { padding: 6px; font-size: 11px; background: #333; border: 1px solid var(--border); color: #fff; cursor: pointer; border-radius: 2px; display: flex; align-items: center; justify-content: center; gap: 5px; }
         .btn-side:hover { background: var(--accent); }
 
         .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         
-        /* TABS SYSTEM */
         .tabs-bar { height: 35px; background-color: #252526; display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); }
         .tab { padding: 0 15px; display: flex; align-items: center; background: #2d2d2d; border-right: 1px solid var(--border); color: #969696; font-size: 12px; cursor: pointer; min-width: 100px; justify-content: space-between;}
         .tab.active { background: var(--bg-editor); color: #fff; border-top: 2px solid var(--accent); }
@@ -74,9 +87,9 @@
 
         #editor-wrapper { flex: 1; position: relative; width: 100%; height: 100%; }
         #inspector-wrapper { flex: 1; position: relative; width: 100%; height: 100%; padding: 20px; background: #1e1e1e; overflow-y: auto; }
-        .CodeMirror { position: absolute; top: 0; left: 0; right: 0; bottom: 0; height: 100%; font-family: 'Consolas', monospace; font-size: 14px; }
+        .CodeMirror { position: absolute; top: 0; left: 0; right: 0; bottom: 0; height: 100%; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; }
         
-        /* VS Code Highlighting */
+        /* Syntax Colors - VS Code Theme */
         .cm-s-material-darker.CodeMirror { background: #1e1e1e !important; color: #d4d4d4 !important; }
         .cm-s-material-darker .CodeMirror-gutters { background: #1e1e1e !important; border-right: 1px solid #333 !important; }
         .cm-s-material-darker .cm-keyword { color: #C586C0 !important; } 
@@ -85,8 +98,13 @@
         .cm-s-material-darker .cm-number { color: #B5CEA8 !important; } 
         .cm-s-material-darker .cm-comment { color: #6A9955 !important; } 
         .cm-s-material-darker .cm-variable, .cm-s-material-darker .cm-variable-2, .cm-s-material-darker .cm-property { color: #9CDCFE !important; } 
+        
+        /* XML & Meta Tags Colors */
         .cm-s-material-darker .cm-tag { color: #569cd6 !important; } 
         .cm-s-material-darker .cm-attribute { color: #9cdcfe !important; } 
+        .cm-s-material-darker .cm-bracket { color: #808080 !important; }
+        .cm-s-material-darker .cm-atom { color: #ce9178 !important; }
+        .cm-s-material-darker .cm-meta { color: #569cd6 !important; }
 
         .statusbar { min-height: 28px; background-color: var(--accent); color: #fff; display: flex; align-items: center; padding: 4px 15px; font-size: 12px; justify-content: space-between; }
         .status-left { display: flex; gap: 15px; }
@@ -99,7 +117,6 @@
         .modal-box { background: #252526; border: 1px solid #3c3c3c; width: 350px; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
         .modal-input, .modal-select { width: 100%; background: #3c3c3c; border: 1px solid #555; color: #fff; padding: 6px; font-size: 12px; outline: none; }
         
-        /* INSPECTOR TABLE */
         .inspector-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; color: #fff; }
         .inspector-table td { padding: 6px; border-bottom: 1px solid #333; font-size: 13px; }
         .inspector-table td.label { color: var(--text-muted); width: 30%; }
@@ -118,7 +135,7 @@
 <div class="vscode-container">
     <div class="titlebar">
         <div class="title">Dynamic Resource Editor - Admin Mode</div>
-        <div class="window-controls"><button class="btn-close" onclick="triggerMTA('editor:onRequestClose')">✕</button></div>
+        <div class="window-controls"><button class="btn-close" onclick="triggerMTA('editor:onRequestClose')">&#10005;</button></div>
     </div>
 
     <div class="workspace">
@@ -126,7 +143,7 @@
             <div class="search-box"><input type="text" id="searchRes" placeholder="Filter resources..." oninput="filterResources()"></div>
             
             <div class="list-section">
-                <div class="section-title">Resources <span style="cursor:pointer;" onclick="triggerMTA('editor:requestLogs')" title="Activity Logs">📜</span></div>
+                <div class="section-title">Resources <span style="cursor:pointer;" onclick="triggerMTA('editor:requestLogs')" title="Activity Logs">&#128220;</span></div>
                 <div id="resources-list" class="list-container"></div>
             </div>
             
@@ -136,12 +153,12 @@
             </div>
 
             <div class="sidebar-actions">
-                <button class="btn-side" onclick="promptAction('create')">📄 New</button>
-                <button class="btn-side" onclick="promptCopy()">⎘ Copy</button>
-                <button class="btn-side" onclick="ctxRename()">✏️ Rename</button>
-                <button class="btn-side" onclick="promptAction('delete')" style="color: #ff5252;">✕ Delete</button>
-                <button class="btn-side" onclick="triggerMTA('editor:onStartObjectSelection')" style="color: #4CAF50; grid-column: span 2;">🎯 Select Object</button>
-                <button class="btn-side" onclick="promptRestoreResource()" style="color:#FF9800; grid-column: span 2;">⟲ Backups</button>
+                <button class="btn-side" onclick="promptAction('create')">&#128196; New</button>
+                <button class="btn-side" onclick="promptCopy()">&#10697; Copy</button>
+                <button class="btn-side" onclick="ctxRename()">&#9998; Rename</button>
+                <button class="btn-side" onclick="promptAction('delete')" style="color: #ff5252;">&#10005; Delete</button>
+                <button class="btn-side" onclick="triggerMTA('editor:onStartObjectSelection')" style="color: #4CAF50; grid-column: span 2;">&#127919; Select Object</button>
+                <button class="btn-side" onclick="promptRestoreResource()" style="color:#FF9800; grid-column: span 2;">&#8634; Backups</button>
             </div>
         </div>
 
@@ -149,7 +166,7 @@
             <div class="tabs-bar" id="tabs-bar"></div>
             <div class="editor-toolbar" id="editor-toolbar-area">
                 <div class="custom-dropdown">
-                    <button class="btn-action secondary" onclick="toggleTplDropdown(event)">Templates ▾</button>
+                    <button class="btn-action secondary" onclick="toggleTplDropdown(event)">Templates &#9662;</button>
                     <div class="dropdown-content" id="tpl-menu">
                         <div onclick="insertTemplate('jump')">Jump Marker</div>
                         <div onclick="insertTemplate('tp')">Teleport Marker</div>
@@ -200,21 +217,17 @@
     let editor;
     let allResources = [];
     let selectedResource = null;
-    
-    // MULTI-SELECTION STATE
     let selectedFile = null;
     let ctxTargetFile = null; 
     let selectedFiles = []; 
-    
     let modalCallback = null;
     let openTabs = [];
     let activeTabId = null;
 
-    // FIX FOR MTA CEF CTRL KEY
     let isCtrlPressed = false;
     document.addEventListener('keydown', (e) => { if(e.key === 'Control' || e.keyCode === 17) isCtrlPressed = true; });
     document.addEventListener('keyup', (e) => { if(e.key === 'Control' || e.keyCode === 17) isCtrlPressed = false; });
-    window.addEventListener('blur', () => { isCtrlPressed = false; }); // Prevents getting stuck when tabbing out
+    window.addEventListener('blur', () => { isCtrlPressed = false; });
 
     document.addEventListener("DOMContentLoaded", function() {
         editor = CodeMirror.fromTextArea(document.getElementById("code"), {
@@ -248,7 +261,6 @@
     function actionComplete() { hideLoading(); }
     function updateStatus(txt, col) { document.getElementById("status-text").innerText = txt; if(col) document.querySelector(".statusbar").style.background = col; }
 
-    // --- OBJECT INSPECTOR TAB ---
     function showObjectProperties(model, x, y, z, rx, ry, rz, interior, dimension) {
         let id = "INSPECTOR::ObjectProps";
         let tab = openTabs.find(t => t.id === id);
@@ -257,7 +269,7 @@
         
         let htmlContent = `
             <div style="color: #fff; max-width: 550px;">
-                <h2 style="color: #4CAF50; margin-bottom: 15px; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">🎯 Object Properties</h2>
+                <h2 style="color: #4CAF50; margin-bottom: 15px; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">&#127919; Object Properties</h2>
                 <table class="inspector-table">
                     <tr><td class="label">Model ID</td><td style="font-weight:bold;">${model}</td></tr>
                     <tr><td class="label">Position X</td><td style="font-family:monospace;">${x}</td></tr>
@@ -275,12 +287,13 @@
             </div>
         `;
 
-        if(!tab) {
+        if (!tab) {
             tab = { id: id, res: "INSPECTOR", file: "Properties", isInspector: true, html: htmlContent };
             openTabs.push(tab);
         } else {
             tab.html = htmlContent;
         }
+
         switchTab(id);
     }
 
@@ -292,7 +305,6 @@
         setTimeout(() => updateStatus("Ready", "#007acc"), 2000);
     }
 
-    // --- TEMPLATE LOGIC ---
     function toggleTplDropdown(e) { e.stopPropagation(); document.getElementById("tpl-menu").classList.toggle("show"); }
     function getNextIndex(prefix) {
         let content = editor.getValue(); let regex = new RegExp(prefix + "(\\d+)", "g");
@@ -318,7 +330,7 @@
             code = `\n-- PushTo Marker ${idx}\nlocal pushMarker${idx} = createMarker(0, 0, 0, "corona", 1, 155, 155, 155, 155)\n\nfunction pushVehicleToPoint${idx}(hitPlayer)\n    if hitPlayer == localPlayer and source == pushMarker${idx} then\n        local vehicle = getPedOccupiedVehicle(hitPlayer)\n        if vehicle then\n            local targetX, targetY, targetZ = 0, 0, 0\n            local vx, vy, vz = getElementPosition(vehicle)\n            local dx, dy, dz = targetX - vx, targetY - vy, targetZ - vz\n            local distH = math.sqrt(dx*dx + dy*dy)\n            if distH > 0 then\n                local forceH = 1\n                local forceV = 0  \n                setElementVelocity(vehicle, (dx/distH) * forceH, (dy/distH) * forceH, (dz/distH) * forceH + forceV)\n            end\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", pushMarker${idx}, pushVehicleToPoint${idx})\n`;
         } else if (type === "slowmo") {
             let idx = getNextIndex("slowStartMarker");
-            code = `\n-- SlowMo Marker ${idx}\nlocal slowStartMarker${idx}\nlocal slowStopMarker${idx}\nfunction initSlowmoMarkers${idx}()\n	slowStartMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, 255, true)\n	slowStopMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, 255, true)\nend\naddEventHandler("onClientResourceStart", getResourceRootElement(getThisResource()), initSlowmoMarkers${idx})\nfunction onSlowmoMarkerHit${idx}(hitPlayer, matchingDimension)\n	local vehicle = getPedOccupiedVehicle ( hitPlayer )\n	if hitPlayer ~= localPlayer then return end\n	if source == slowStartMarker${idx} then setGameSpeed(0.30)\n	elseif source == slowStopMarker${idx} then setGameSpeed(1) end\nend\naddEventHandler("onClientMarkerHit", root, onSlowmoMarkerHit${idx})\n`;
+            code = `\n-- SlowMo Marker ${idx}\nlocal slowStartMarker${idx}\nlocal slowStopMarker${idx}\nfunction initSlowmoMarkers${idx}()\n	slowStartMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, 255, true)\n	slowStopMarker${idx} = createMarker( 0, 0, 0, "corona", 1, 255, 255, 255, true)\nend\naddEventHandler("onClientResourceStart", getResourceRootElement(getThisResource()), initSlowmoMarkers${idx})\nfunction onSlowmoMarkerHit${idx}(hitPlayer, matchingDimension)\n	local vehicle = getPedOccupiedVehicle ( hitPlayer )\n	if hitPlayer ~= localPlayer then return end\n	if source == slowStartMarker${idx} then setGameSpeed(0.30)\n	elseif source == slowStopMarker${idx} then setGameSpeed(1) end\nend\naddEventHandler("onClientMarkerHit", root, onSlowmoMarkerHit${idx})\n`;
         } else if (type === "exprot") {
             let idx = getNextIndex("expRotMarker");
             code = `\n-- Explosion Rotation Marker ${idx}\nlocal expRotMarker${idx} = createMarker(0, 0, 0, "corona", 5, 255, 0, 0, 255)\n\nfunction onExpRotMarkerHit${idx}(player)\n    if player == localPlayer and isPedInVehicle(player) then\n        local vehicle = getPedOccupiedVehicle(player)\n        if vehicle then\n            local targetRotZ = 0\n            local tolerance = 30\n            local _, _, rz = getElementRotation(vehicle)\n            local diff = math.abs(rz - targetRotZ)\n            if diff > 180 then diff = 360 - diff end\n            if diff > tolerance then\n                local x, y, z = getElementPosition(vehicle)\n                createExplosion(x, y, z, 7)\n                setElementHealth(vehicle, 0)\n            end\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", expRotMarker${idx}, onExpRotMarkerHit${idx})\n`;
@@ -334,7 +346,6 @@
         document.getElementById("tpl-menu").classList.remove("show"); editor.focus();
     }
 
-    // --- TABS LOGIC ---
     function getTabId(res, file) { return res + "::" + file; }
 
     function setEditorContent(content, fileName, resName) {
@@ -351,18 +362,22 @@
             let curr = openTabs.find(t => t.id === activeTabId);
             if(curr && !curr.isInspector) { curr.content = editor.getValue(); curr.cursor = editor.getCursor(); }
         }
-        activeTabId = id; let tab = openTabs.find(t => t.id === id);
+        activeTabId = id; 
+        let tab = openTabs.find(t => t.id === id);
+        if(!tab) return;
         
         if (tab.isInspector) {
             document.getElementById("editor-wrapper").style.display = "none";
             document.getElementById("editor-toolbar-area").style.display = "none";
             let ins = document.getElementById("inspector-wrapper");
-            ins.style.display = "block"; ins.innerHTML = tab.html;
+            ins.style.display = "block"; 
+            ins.innerHTML = tab.html;
             
             selectedResource = null; selectedFile = null;
             document.getElementById("file-info").innerText = "Object Inspector";
             document.getElementById("file-mode").innerText = "Inspector Mode";
-            renderTabs(); return;
+            renderTabs(); 
+            return;
         }
 
         document.getElementById("editor-wrapper").style.display = "block";
@@ -372,21 +387,40 @@
         selectedResource = tab.res; selectedFile = tab.file; ctxTargetFile = tab.file; 
         document.getElementById("file-info").innerText = `${tab.res}/${tab.file}`;
         
-        let ext = tab.file.split('.').pop().toLowerCase();
-        let mode = "lua"; let dName = "Lua Mode";
-        if(ext==='fx'||ext==='hlsl'){ mode="text/x-c++src"; dName="FX/Shader Mode"; }
-        else if(ext==='xml'||ext==='html'||ext==='map'){ mode="application/xml"; dName="XML/HTML Mode"; }
+        let lowerName = tab.file.toLowerCase();
+        let ext = lowerName.split('.').pop();
+        let mode = "lua"; 
+        let dName = "Lua Mode";
+
+        if (ext === 'fx' || ext === 'hlsl') { 
+            mode = "text/x-c++src"; 
+            dName = "FX/Shader Mode"; 
+        } else if (ext === 'xml' || ext === 'html' || ext === 'map' || lowerName.indexOf('meta.xml') !== -1) { 
+            mode = "application/xml"; 
+            dName = "XML Mode"; 
+        }
         
-        editor.setOption("mode", mode); document.getElementById("file-mode").innerText = dName;
-        editor.setValue(tab.content); editor.setCursor(tab.cursor);
-        updateStatus("Opened", "#007acc"); renderTabs();
+        editor.setOption("mode", mode);
+        document.getElementById("file-mode").innerText = dName;
+        editor.setValue(tab.content); 
+        editor.setCursor(tab.cursor);
+        updateStatus("Opened", "#007acc"); 
+        renderTabs();
     }
 
     function closeTab(id) {
         openTabs = openTabs.filter(t => t.id !== id);
         if(activeTabId === id) {
             if(openTabs.length > 0) switchTab(openTabs[openTabs.length-1].id);
-            else { activeTabId = null; editor.setValue(""); document.getElementById("file-info").innerText="-"; renderTabs(); }
+            else { 
+                activeTabId = null; 
+                editor.setValue(""); 
+                document.getElementById("file-info").innerText="-"; 
+                document.getElementById("editor-wrapper").style.display = "block";
+                document.getElementById("editor-toolbar-area").style.display = "flex";
+                document.getElementById("inspector-wrapper").style.display = "none";
+                renderTabs(); 
+            }
         } else renderTabs();
     }
 
@@ -394,7 +428,7 @@
         let bar = document.getElementById("tabs-bar"); bar.innerHTML = "";
         openTabs.forEach(t => {
             let d = document.createElement("div"); d.className = "tab" + (t.id === activeTabId ? " active" : "");
-            d.innerHTML = `${t.file} <span class="tab-close" onclick="event.stopPropagation(); closeTab('${t.id}')">✕</span>`;
+            d.innerHTML = `${t.file} <span class="tab-close" onclick="event.stopPropagation(); closeTab('${t.id}')">&#10005;</span>`;
             d.onclick = () => switchTab(t.id); bar.appendChild(d);
         });
     }
@@ -410,7 +444,6 @@
 
     function revertActiveTab() { if(!activeTabId) return; let tab = openTabs.find(t => t.id === activeTabId); if(!tab.isInspector) editor.setValue(tab.originalContent); }
 
-    // --- MODALS ---
     function showLogsModal(logs) {
         let html = `<div style="max-height:300px; overflow-y:auto;"><table class="logs-table"><tr><th>Time</th><th>Admin</th><th>Action</th><th>Details</th></tr>`;
         logs.forEach(l => { html += `<tr><td>${l.time}</td><td>${l.admin}</td><td>${l.action}</td><td>${l.details}</td></tr>`; });
@@ -449,7 +482,6 @@
     function closeModal() { document.getElementById('custom-modal').style.display = 'none'; document.getElementById('modal-box-inner').style.width="320px"; modalCallback = null; }
     function showAlert(msg) { updateStatus(msg, "#ff5252"); setTimeout(() => updateStatus("Ready", "#007acc"), 3000); }
 
-    // --- SIDEBAR & FILE SYSTEM ---
     function setResources(resList) { allResources = Array.isArray(resList) ? resList : []; filterResources(); }
     function filterResources() {
         const q = document.getElementById("searchRes").value.toLowerCase(); const list = document.getElementById("resources-list"); list.innerHTML = "";
@@ -468,7 +500,17 @@
         if(!files || files.length === 0) return list.innerHTML = "<div style='padding:10px; color:#717171;'>No files</div>";
         
         files.sort().forEach(file => {
-            let div = document.createElement("div"); div.className = "list-item"; div.innerText = "📄 " + file; 
+            let div = document.createElement("div"); 
+            div.className = "list-item"; 
+            
+            let iconSpan = document.createElement("span");
+            iconSpan.innerHTML = "&#128196;";
+            
+            let textSpan = document.createElement("span");
+            textSpan.innerText = file;
+            
+            div.appendChild(iconSpan);
+            div.appendChild(textSpan);
             
             div.oncontextmenu = (e) => {
                 e.preventDefault(); 
@@ -509,7 +551,6 @@
 
     function clearFileSelections() { selectedFiles = []; selectedFile = null; ctxTargetFile = null; }
 
-    // --- ACTIONS ---
     function promptAction(action) {
         if (!selectedResource) return showAlert("Select resource first!");
         if (action === "create") {
@@ -546,7 +587,6 @@
             openModal("Copy Multiple Files", `Copy all ${targets.length} marked files to selected resource?`, false, true, "", (dummy, targetRes) => {
                 if(targetRes) {
                     showLoading("Copying files...");
-                    // FIX: Pass as string with "|" delimiter
                     let fileString = targets.join("|");
                     triggerMTA("editor:copyMultipleFiles", selectedResource, fileString, targetRes);
                 }
