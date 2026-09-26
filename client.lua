@@ -75,7 +75,7 @@ bindKey("F2", "down", function()
     end
 end)
 
--- SYNC (SERVER -> CEF)
+-- SYNCHRONISATION (SERVER -> CEF)
 addEvent("editor:receiveResources", true)
 addEventHandler("editor:receiveResources", root, function(resList)
     if editorBrowser and type(resList) == "table" then
@@ -111,7 +111,7 @@ addEventHandler("editor:actionComplete", root, function()
     if editorBrowser then executeBrowserJavascript(editorBrowser, "actionComplete();") end
 end)
 
--- CALLBACKS (CEF -> LUA)
+-- RÜCKMELDUNGEN (CEF -> LUA)
 addEvent("editor:onEditorStatus", true)
 addEventHandler("editor:onEditorStatus", root, function(text, color)
     if editorBrowser then executeBrowserJavascript(editorBrowser, "updateStatus('"..text.."', '"..color.."')") end
@@ -128,7 +128,7 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             if file and string.find(file, "%.lua$") then
                 local func, err = loadstring(finalContent)
                 if not func then
-                    executeBrowserJavascript(editorBrowser, "updateStatus('SYNTAX ERROR', '#ff5252'); actionComplete();")
+                    executeBrowserJavascript(editorBrowser, "updateStatus('SYNTAXFEHLER', '#ff5252'); actionComplete();")
                     return
                 end
             end
@@ -136,7 +136,7 @@ addEventHandler("editor:onRequestSave", root, function(res, file, chunk, current
             triggerServerEvent("editor:saveFile", localPlayer, res, file, finalContent)
             
             if editorBrowser then
-                executeBrowserJavascript(editorBrowser, "updateStatus('Saved Successfully', '#4CAF50'); actionComplete();")
+                executeBrowserJavascript(editorBrowser, "updateStatus('Erfolgreich gespeichert', '#4CAF50'); actionComplete();")
             end
         end, 50, 1)
     end
@@ -153,7 +153,7 @@ addEventHandler("editor:syncDirectory", root, function()
     executeBrowserJavascript(editorBrowser, "syncDirectory();")
 end)
 
--- BRIDGE
+-- SCHNITTSTELLEN-EVENTS
 addEvent("editor:requestFiles", true)
 addEventHandler("editor:requestFiles", root, function(res) triggerServerEvent("editor:requestFiles", localPlayer, res) end)
 
@@ -190,7 +190,7 @@ addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes
 end)
 
 -- ==============================================================
--- MATHEMATICAL CALCULATIONS
+-- MATHEMATISCHE BERECHNUNGEN
 -- ==============================================================
 local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
@@ -203,63 +203,111 @@ local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
 end
 
 -- ==============================================================
--- DATA EXTRACTION (GUARD AGAINST BOOLEANS & NIL)
+-- PRÄZISE MARKER-POSITIONSBESTIMMUNG
 -- ==============================================================
-local function getElementProperties(element)
-    local edID = getElementData(element, "id") or getElementID(element)
-    local posX = tonumber(getElementData(element, "posX"))
-    local posY = tonumber(getElementData(element, "posY"))
-    local posZ = tonumber(getElementData(element, "posZ"))
-    local rotX = tonumber(getElementData(element, "rotX"))
-    local rotY = tonumber(getElementData(element, "rotY"))
-    local rotZ = tonumber(getElementData(element, "rotZ"))
-
-    if not posX or not posY or not posZ then
+local function getElementWorldPosition(element)
+    -- 1. Direkt getElementPosition aufrufen, falls natives Marker-/Kind-Element
+    if isElement(element) then
         local px, py, pz = getElementPosition(element)
-        posX = tonumber(px) or 0
-        posY = tonumber(py) or 0
-        posZ = tonumber(pz) or 0
+        if px and py and pz and (px ~= 0 or py ~= 0 or pz ~= 0) then
+            return px, py, pz
+        end
     end
 
-    if not rotX or not rotY or not rotZ then
-        local rx, ry, rz = getElementRotation(element)
-        rotX = tonumber(rx) or 0
-        rotY = tonumber(ry) or 0
-        rotZ = tonumber(rz) or 0
+    -- 2. Wenn Parent, sichtbares Kind-Element prüfen
+    for _, child in ipairs(getElementChildren(element)) do
+        local cx, cy, cz = getElementPosition(child)
+        if cx and cy and cz and (cx ~= 0 or cy ~= 0 or cz ~= 0) then
+            return cx, cy, cz
+        end
+    end
+
+    -- 3. Rückgriff auf posX, posY, posZ
+    local x = tonumber(getElementData(element, "posX"))
+    local y = tonumber(getElementData(element, "posY"))
+    local z = tonumber(getElementData(element, "posZ"))
+    if x and y and z then return x, y, z end
+
+    -- 4. Rückgriff auf "position"-Zeichenkette
+    local rawPos = getElementData(element, "position")
+    if type(rawPos) == "string" then
+        local parts = split(rawPos, ",")
+        if #parts >= 3 then
+            local sx, sy, sz = tonumber(parts[1]), tonumber(parts[2]), tonumber(parts[3])
+            if sx and sy and sz then return sx, sy, sz end
+        end
+    end
+
+    return 0, 0, 0
+end
+
+local function getElementProperties(element)
+    local targetEl = element
+    local parent = getElementParent(element)
+    local parentType = parent and tostring(getElementType(parent)):lower() or ""
+    
+    local customTypes = {["jump"]=true, ["teleport"]=true, ["slowmotion"]=true, ["environment"]=true, ["camera"]=true, ["fx"]=true, ["advancedobject"]=true, ["movingobject"]=true}
+    if customTypes[parentType] then
+        targetEl = parent
+    end
+
+    local elType = tostring(getElementType(targetEl)):lower()
+    local edID = getElementData(targetEl, "id") or getElementID(targetEl) or getElementData(element, "id") or getElementID(element) or ""
+
+    local posX, posY, posZ = getElementWorldPosition(element)
+    if posX == 0 and posY == 0 and posZ == 0 then
+        posX, posY, posZ = getElementWorldPosition(targetEl)
+    end
+
+    local isMarkerLike = (elType == "marker" or elType == "jump" or elType == "teleport" or elType == "slowmotion" or elType == "environment" or elType == "camera")
+    local markerType = getElementData(targetEl, "type") or getElementData(element, "type") or (elType == "marker" and getMarkerType(element)) or "corona"
+    local markerSize = tonumber(getElementData(targetEl, "size")) or tonumber(getElementData(element, "size")) or (elType == "marker" and getMarkerSize(element)) or 2.25
+
+    local vx = tonumber(getElementData(targetEl, "velocityX")) or tonumber(getElementData(element, "velocityX")) or 0
+    local vy = tonumber(getElementData(targetEl, "velocityY")) or tonumber(getElementData(element, "velocityY")) or 0
+    local vz = tonumber(getElementData(targetEl, "velocityZ")) or tonumber(getElementData(element, "velocityZ")) or 0
+
+    local rotX, rotY, rotZ = 0, 0, 0
+    if not isMarkerLike then
+        rotX = tonumber(getElementData(targetEl, "rotX")) or 0
+        rotY = tonumber(getElementData(targetEl, "rotY")) or 0
+        rotZ = tonumber(getElementData(targetEl, "rotZ")) or 0
+        if rotX == 0 and rotY == 0 and rotZ == 0 then
+            local rx, ry, rz = getElementRotation(element)
+            rotX, rotY, rotZ = tonumber(rx) or 0, tonumber(ry) or 0, tonumber(rz) or 0
+        end
     end
 
     local modelIdentifier = "0"
-    local elType = tostring(getElementType(element)):lower()
-
-    if string.find(elType, "marker") then
-        local mType = getElementData(element, "type") or (isElement(element) and getMarkerType(element)) or "corona"
-        modelIdentifier = '"' .. tostring(mType) .. '" (Marker)'
+    if isMarkerLike then
+        modelIdentifier = string.format("%s (%s)", markerType, elType:upper())
     elseif string.find(elType, "object") then
-        local mID = getElementData(element, "model") or getElementModel(element)
+        local mID = getElementData(targetEl, "model") or getElementModel(element)
         modelIdentifier = tostring(mID or 0)
     else
-        modelIdentifier = '"' .. elType .. '"'
+        modelIdentifier = elType
     end
 
     if edID and edID ~= "" then
         modelIdentifier = modelIdentifier .. " [" .. tostring(edID) .. "]"
     end
 
-    return modelIdentifier, posX, posY, posZ, rotX, rotY, rotZ
+    return {
+        name = modelIdentifier,
+        x = posX, y = posY, z = posZ,
+        rx = rotX, ry = rotY, rz = rotZ,
+        isMarker = isMarkerLike,
+        markerType = tostring(markerType),
+        size = markerSize,
+        isJump = (elType == "jump"),
+        vx = vx, vy = vy, vz = vz
+    }
 end
 
 -- ==============================================================
--- TARGET DETECTION VIA CAMERA ALIGNMENT
+-- ZIELSUCHE DURCH KAMERA-AUSRICHTUNG
 -- ==============================================================
 local function findCrosshairTarget()
-    local editorRes = getResourceFromName("editor_main")
-    if editorRes and getResourceState(editorRes) == "running" then
-        local ok, sel = pcall(function() return exports.editor_main:getSelectedElement() end)
-        if ok and isElement(sel) then
-            return sel
-        end
-    end
-
     local cx, cy, cz, lx, ly, lz = getCameraMatrix()
     local dirX, dirY, dirZ = lx - cx, ly - cy, lz - cz
     local len = math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ)
@@ -275,24 +323,27 @@ local function findCrosshairTarget()
     local bestDist = 999999
     local chosenElement = nil
 
-    local scanList = {}
-    for _, marker in ipairs(getElementsByType("marker")) do table.insert(scanList, marker) end
-    for _, pickup in ipairs(getElementsByType("pickup")) do table.insert(scanList, pickup) end
-    for _, col in ipairs(getElementsByType("colshape")) do table.insert(scanList, col) end
-
-    local edMarkerRoot = getResourceRootElement(getResourceFromName("editor_main"))
-    if isElement(edMarkerRoot) then
-        for _, el in ipairs(getElementChildren(edMarkerRoot)) do
-            table.insert(scanList, el)
+    -- 1. Marker & KMST-Marker scannen
+    local markerList = {}
+    for _, marker in ipairs(getElementsByType("marker")) do table.insert(markerList, marker) end
+    
+    local kmstMarkerTypes = {"jump", "teleport", "slowmotion", "environment", "camera", "fx"}
+    for _, cType in ipairs(kmstMarkerTypes) do
+        for _, el in ipairs(getElementsByType(cType)) do
+            table.insert(markerList, el)
+            for _, child in ipairs(getElementChildren(el)) do
+                table.insert(markerList, child)
+            end
         end
     end
 
-    for _, el in ipairs(scanList) do
-        local _, px, py, pz = getElementProperties(el)
+    for _, el in ipairs(markerList) do
+        local px, py, pz = getElementWorldPosition(el)
         local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, px, py, pz)
         if distFromCam < 500 then
             local rayDist = getDistanceToRay(px, py, pz, cx, cy, cz, ex, ey, ez)
-            local threshold = 6.0
+            local size = tonumber(getElementData(el, "size")) or 2.25
+            local threshold = math.max(3.0, size * 1.5)
 
             if rayDist <= threshold and rayDist < bestDist then
                 bestDist = rayDist
@@ -305,11 +356,13 @@ local function findCrosshairTarget()
         return chosenElement
     end
 
+    -- 2. Physischer Raycast für Standard-Objekte
     local hit, hx, hy, hz, hitEl = processLineOfSight(cx, cy, cz, ex, ey, ez, true, true, true, true, true, false, false, false, localPlayer)
     if hit and hitEl and isElement(hitEl) then
         return hitEl
     end
 
+    -- 3. Rückgriff auf Karten-Objekte
     for _, obj in ipairs(getElementsByType("object", root, true)) do
         local ox, oy, oz = getElementPosition(obj)
         local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, ox, oy, oz)
@@ -326,30 +379,25 @@ local function findCrosshairTarget()
 end
 
 -- ==============================================================
--- SINGLE-CLICK OBJECT SELECTION
+-- AUSWAHL-KLICK-HANDLER
 -- ==============================================================
 onSelectionClick = function()
     if not isSelectingObject then return end
     
-    -- Immediate deactivation & unbind to prevent extra clicks from interfering with the UI
     isSelectingObject = false
     unbindKey("mouse1", "down", onSelectionClick)
 
     local targetElement = findCrosshairTarget()
 
-    -- 100ms delay to ensure mouse button release does not trigger unintended UI clicks
     setTimer(function()
         if targetElement and isElement(targetElement) then
-            local modelName, x, y, z, rx, ry, rz = getElementProperties(targetElement)
-            local int = tonumber(getElementInterior(targetElement)) or 0
-            local dim = tonumber(getElementDimension(targetElement)) or 0
-
+            local p = getElementProperties(targetElement)
             toggleEditor(true, true)
 
             setTimer(function()
                 if isElement(editorBrowser) then
-                    local js = string.format("showObjectProperties('%s', %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d);", 
-                        tostring(modelName), tonumber(x) or 0, tonumber(y) or 0, tonumber(z) or 0, tonumber(rx) or 0, tonumber(ry) or 0, tonumber(rz) or 0, int, dim)
+                    local payloadJSON = toJSON(p):sub(2, -2)
+                    local js = string.format("showInspectedElement(%s);", payloadJSON)
                     executeBrowserJavascript(editorBrowser, js)
                 end
             end, 150, 1)
@@ -365,7 +413,6 @@ addEventHandler("editor:onStartObjectSelection", root, function()
     toggleEditor(false)
     showCursor(false)
     
-    -- Delay binding by 150ms so clicking the UI button doesn't trigger instant selection
     setTimer(function()
         if isSelectingObject then
             bindKey("mouse1", "down", onSelectionClick)
