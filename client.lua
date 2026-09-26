@@ -190,7 +190,7 @@ addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes
 end)
 
 -- ==============================================================
--- MATHEMATISCHE BERECHNUNGEN
+-- MATHEMATICAL CALCULATIONS
 -- ==============================================================
 local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
@@ -203,7 +203,7 @@ local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
 end
 
 -- ==============================================================
--- DATEN-EXTRAKTION (ABSICHERUNG GEGEN BOOLEANS & NIL)
+-- DATA EXTRACTION (GUARD AGAINST BOOLEANS & NIL)
 -- ==============================================================
 local function getElementProperties(element)
     local edID = getElementData(element, "id") or getElementID(element)
@@ -249,7 +249,7 @@ local function getElementProperties(element)
 end
 
 -- ==============================================================
--- ZIELSUCHE ANHAND DER KAMERA-AUSRICHTUNG
+-- TARGET DETECTION VIA CAMERA ALIGNMENT
 -- ==============================================================
 local function findCrosshairTarget()
     local editorRes = getResourceFromName("editor_main")
@@ -326,17 +326,18 @@ local function findCrosshairTarget()
 end
 
 -- ==============================================================
--- EINMALIGE KLICK-AUSWAHL
+-- SINGLE-CLICK OBJECT SELECTION
 -- ==============================================================
 onSelectionClick = function()
     if not isSelectingObject then return end
     
+    -- Immediate deactivation & unbind to prevent extra clicks from interfering with the UI
     isSelectingObject = false
     unbindKey("mouse1", "down", onSelectionClick)
 
     local targetElement = findCrosshairTarget()
 
-    -- Verzögerung um 100ms, damit das Loslassen der Maustaste das GUI nicht wieder schließt
+    -- 100ms delay to ensure mouse button release does not trigger unintended UI clicks
     setTimer(function()
         if targetElement and isElement(targetElement) then
             local modelName, x, y, z, rx, ry, rz = getElementProperties(targetElement)
@@ -364,6 +365,7 @@ addEventHandler("editor:onStartObjectSelection", root, function()
     toggleEditor(false)
     showCursor(false)
     
+    -- Delay binding by 150ms so clicking the UI button doesn't trigger instant selection
     setTimer(function()
         if isSelectingObject then
             bindKey("mouse1", "down", onSelectionClick)
