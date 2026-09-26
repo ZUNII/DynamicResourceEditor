@@ -5,7 +5,7 @@ local allowedExtensions = {
     ["js"] = true, ["css"] = true, ["txt"] = true, ["json"] = true, ["fx"] = true, ["hlsl"] = true
 }
 
-local CURRENT_VERSION = 2.7.1
+local CURRENT_VERSION = 2.8
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ZUNII/DynamicResourceEditor/main/"
 
 local FILES_TO_UPDATE = {
