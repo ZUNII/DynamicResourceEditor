@@ -6,7 +6,7 @@ local allowedExtensions = {
     ["png"] = true, ["jpg"] = true, ["jpeg"] = true, ["tga"] = true, ["dds"] = true
 }
 
-local CURRENT_VERSION = "3.0"
+local CURRENT_VERSION = 3.0
 local CURRENT_VERSION_NUM = 3.0
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ZUNII/DynamicResourceEditor/main/"
 
@@ -262,7 +262,7 @@ local function downloadFile(index, newVersion, player)
                 fileWrite(file, responseData)
                 fileClose(file)
                 if isElement(player) then
-                    triggerClientEvent(player, "editor:onEditorStatus", string.format("Updating (%d/%d): %s", index, #FILES_TO_UPDATE, fileName), "#2196F3")
+                    triggerClientEvent(player, "editor:onEditorStatus", player, string.format("Updating (%d/%d): %s", index, #FILES_TO_UPDATE, fileName), "#2196F3")
                 end
                 outputChatBox("[Updater] Downloaded: " .. fileName, player or root, 200, 200, 200)
                 downloadFile(index + 1, newVersion, player)
@@ -284,7 +284,7 @@ local function checkForUpdates(player)
                 downloadFile(1, remoteVersion, player)
             else
                 outputChatBox(string.format("[Updater] DRE is already up to date (Current version: v%s).", CURRENT_VERSION), player, 0, 255, 255)
-                triggerClientEvent(player, "editor:onEditorStatus", string.format("DRE is up to date (v%s)", CURRENT_VERSION), "#4CAF50")
+                triggerClientEvent(player, "editor:onEditorStatus", player, string.format("DRE is up to date (v%s)", CURRENT_VERSION), "#4CAF50")
                 triggerClientEvent(player, "editor:actionComplete", player)
             end
         else
