@@ -1,5 +1,5 @@
 <meta>
-    <info author="ZUNII" name="Dynamic Resource Editor (VS Style)" type="script" version="2.6.0" />
+    <info author="ZUNII" name="Dynamic Resource Editor (VS Style)" type="script" version="3.0" />
     <min_mta_version server="1.6" client="1.5.9" />
 
     <script src="server.lua" type="server" />

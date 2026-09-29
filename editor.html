@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Resource Editor</title>
+    
+    <link rel="stylesheet" href="codemirror.min.css">
+    <link rel="stylesheet" href="material-darker.min.css">
+    <script src="codemirror.min.js"></script>
+    <script src="lua.min.js"></script>
+    <script src="clike.min.js"></script> 
+    <script src="xml.js"></script> 
+    
+    <style>
+        :root {
+            --bg-sidebar: #1e1e1e; 
+            --bg-editor: #232323; 
+            --bg-active: #2a2d2e;
+            --accent: #007acc; 
+            --text-main: #cccccc; 
+            --text-muted: #717171; 
+            --border: #3c3c3c;
+            --titlebar-bg: #323233;
+            --toolbar-bg: #2d2d2d;
+            --code-bg: #1e1e1e;
+            --scrollbar-thumb: #424242;
+            --scrollbar-thumb-hover: #4f4f4f;
+        }
+
+        body.theme-light {
+            --bg-sidebar: #f3f3f3;
+            --bg-editor: #ffffff;
+            --bg-active: #e4e6f1;
+            --text-main: #333333;
+            --text-muted: #888888;
+            --border: #cccccc;
+            --titlebar-bg: #dddddd;
+            --toolbar-bg: #e8e8e8;
+            --code-bg: #ffffff;
+            --scrollbar-thumb: #c1c1c1;
+            --scrollbar-thumb-hover: #a8a8a8;
+        }
+
+        body.theme-midnight {
+            --bg-sidebar: #0f141c;
+            --bg-editor: #141b24;
+            --bg-active: #1e2837;
+            --text-main: #c9d1d9;
+            --text-muted: #6e7681;
+            --border: #21262d;
+            --titlebar-bg: #090d13;
+            --toolbar-bg: #111822;
+            --code-bg: #0d1117;
+            --scrollbar-thumb: #283344;
+            --scrollbar-thumb-hover: #37455c;
+        }
+
+        body.theme-cyberpunk {
+            --bg-sidebar: #050508;
+            --bg-editor: #0a0a12;
+            --bg-active: #1f1435;
+            --accent: #00ff66;
+            --text-main: #00ffcc;
+            --text-muted: #ff007f;
+            --border: #ff007f;
+            --titlebar-bg: #120a22;
+            --toolbar-bg: #0e071a;
+            --code-bg: #080310;
+            --scrollbar-thumb: #ff007f;
+            --scrollbar-thumb-hover: #00ff66;
+        }
+
+        body.theme-synthwave {
+            --bg-sidebar: #171520;
+            --bg-editor: #262335;
+            --bg-active: #342e48;
+            --accent: #ff7edb;
+            --text-main: #fede5d;
+            --text-muted: #fe4450;
+            --border: #494363;
+            --titlebar-bg: #1e1b2e;
+            --toolbar-bg: #242036;
+            --code-bg: #262335;
+            --scrollbar-thumb: #72f1b8;
+            --scrollbar-thumb-hover: #ff7edb;
+        }
+
+        body.theme-monokai {
+            --bg-sidebar: #191919;
+            --bg-editor: #272822;
+            --bg-active: #3e3d32;
+            --accent: #a6e22e;
+            --text-main: #f8f8f2;
+            --text-muted: #75715e;
+            --border: #49483e;
+            --titlebar-bg: #141411;
+            --toolbar-bg: #1e1f1c;
+            --code-bg: #272822;
+            --scrollbar-thumb: #fd971f;
+            --scrollbar-thumb-hover: #f92672;
+        }
+
+        body.theme-solarized {
+            --bg-sidebar: #073642;
+            --bg-editor: #002b36;
+            --bg-active: #0e4c5c;
+            --accent: #b58900;
+            --text-main: #93a1a1;
+            --text-muted: #586e75;
+            --border: #094757;
+            --titlebar-bg: #05262f;
+            --toolbar-bg: #083b48;
+            --code-bg: #002b36;
+            --scrollbar-thumb: #2aa198;
+            --scrollbar-thumb-hover: #268bd2;
+        }
+
+        body.theme-dracula {
+            --bg-sidebar: #21222c;
+            --bg-editor: #282a36;
+            --bg-active: #44475a;
+            --accent: #bd93f9;
+            --text-main: #f8f8f2;
+            --text-muted: #6272a4;
+            --border: #44475a;
+            --titlebar-bg: #191a21;
+            --toolbar-bg: #21222c;
+            --code-bg: #282a36;
+            --scrollbar-thumb: #ff79c6;
+            --scrollbar-thumb-hover: #bd93f9;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body, html { height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: transparent; color: var(--text-main); overflow: hidden; }
+
+        ::-webkit-scrollbar { width: 7px; height: 7px; }
+        ::-webkit-scrollbar-track { background: var(--bg-sidebar); }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+        #dre-backdrop-blur {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 1; transform: translateZ(0);
+            display: none;
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: background-color 0.15s ease;
+        }
+        body.enable-bg-blur #dre-backdrop-blur { display: block; }
+
+        .vscode-container {
+            position: absolute; top: 5%; left: 5%; width: 90%; height: 90%;
+            background-color: var(--bg-editor); border: 1px solid var(--border);
+            display: flex; flex-direction: column; border-radius: 4px; overflow: hidden;
+            z-index: 2; transform: translateZ(0); will-change: transform;
+        }
+
+        .titlebar { height: 35px; background-color: var(--titlebar-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; justify-content: space-between; flex-shrink: 0; }
+        .title { font-size: 12px; font-weight: 600; color: var(--text-main); }
+        .window-controls { display: flex; align-items: center; gap: 6px; }
+        .window-controls button { background: none; border: none; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 3px; color: var(--text-main); }
+        .window-controls button:hover { background: rgba(255,255,255,0.1); }
+        .window-controls .btn-close { color: #ff5252; font-weight: bold; }
+        .window-controls .btn-close:hover { background: rgba(255,82,82,0.2); }
+
+        .workspace { flex: 1; display: flex; min-height: 0; position: relative; }
+        .sidebar { width: 300px; background-color: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: relative; flex-shrink: 0; min-height: 0; }
+        
+        .search-box { padding: 10px 10px 6px 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+        .search-box input { width: 100%; padding: 6px 10px; background: var(--bg-editor); border: 1px solid var(--border); color: var(--text-main); font-size: 12px; outline: none; border-radius: 2px; user-select: auto; }
+
+        .filter-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+        .filter-chip { 
+            padding: 2px 7px; font-size: 10px; background: var(--toolbar-bg); border: 1px solid var(--border); 
+            border-radius: 10px; cursor: pointer; color: var(--text-muted); transition: all 0.15s ease;
+        }
+        .filter-chip:hover { color: #fff; border-color: var(--accent); }
+        .filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: bold; }
+
+        .list-section { 
+            flex: 1 1 50%; display: flex; flex-direction: column; min-height: 0; height: 50%;
+            border-bottom: 1px solid var(--border); overflow: hidden; 
+        }
+        .section-title { 
+            font-size: 11px; font-weight: bold; text-transform: uppercase; color: var(--text-muted); 
+            padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--bg-sidebar); 
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; z-index: 10;
+        }
+        
+        .list-container { flex: 1; overflow-y: auto; padding: 4px 0; min-height: 0; transform: translateZ(0); will-change: scroll-position; }
+        .list-item { 
+            padding: 6px 16px; font-size: 13px; cursor: pointer; display: flex; align-items: center;
+            justify-content: flex-start; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main);
+        }
+        .list-item:hover { background-color: var(--bg-active); }
+        .list-item.selected { background-color: var(--accent) !important; color: #fff !important; }
+
+        .sidebar-actions { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: var(--bg-sidebar); border-top: 1px solid var(--border); flex-shrink: 0; }
+        .btn-side { padding: 6px; font-size: 11px; background: var(--toolbar-bg); border: 1px solid var(--border); color: var(--text-main); cursor: pointer; border-radius: 2px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .btn-side:hover { background: var(--accent); color: #fff; }
+
+        .editor-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+        
+        .tabs-bar { height: 35px; background-color: var(--titlebar-bg); display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .tab { 
+            padding: 0 12px; display: flex; align-items: center; background: var(--toolbar-bg); 
+            border-right: 1px solid var(--border); color: var(--text-muted); font-size: 12px; cursor: pointer; 
+            max-width: 160px; min-width: 100px; justify-content: space-between;
+        }
+        .tab-title-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
+        .tab.active { background: var(--bg-editor); color: var(--text-main); border-top: 2px solid var(--accent); }
+        .tab-close { border-radius: 50%; width: 16px; height: 16px; text-align: center; line-height: 14px; font-size: 10px; flex-shrink: 0; }
+        .tab-close:hover { background: #555; color: #ff5252; }
+
+        .editor-toolbar { height: 35px; background-color: var(--toolbar-bg); display: none; align-items: center; padding: 0 10px; gap: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; z-index: 100; }
+        .toolbar-right-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+        
+        .btn-action { background: var(--accent); border: none; color: #fff; padding: 5px 12px; font-size: 12px; cursor: pointer; border-radius: 2px; transition: opacity 0.15s ease; }
+        .btn-action:hover { opacity: 0.88; }
+        
+        .btn-format-code { background: #00897b !important; }
+        .btn-revert-file { background: #e65100 !important; }
+        .btn-secondary-slate { background: #455a64 !important; }
+
+        .custom-dropdown { position: relative; display: inline-block; }
+        .dropdown-content { 
+            display: none; position: absolute; background-color: var(--toolbar-bg); 
+            min-width: 220px; box-shadow: 0px 8px 20px rgba(0,0,0,0.8); z-index: 99999; 
+            border: 1px solid var(--border); border-radius: 4px; top: 100%; left: 0; margin-top: 4px;
+        }
+        .dropdown-content.show { display: block !important; }
+        .dropdown-content div { padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--text-main); }
+        .dropdown-content div:hover { background-color: var(--accent); color: #fff; }
+
+        #editor-wrapper { flex: 1; position: relative; width: 100%; height: 100%; contain: strict; display: none; }
+        #inspector-wrapper { flex: 1; position: relative; width: 100%; height: 100%; padding: 20px; background: var(--code-bg); overflow-y: auto; display: none; }
+        
+        #empty-workspace-state {
+            flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: var(--text-muted); gap: 10px; font-size: 13px;
+        }
+
+        .CodeMirror { position: absolute; top: 0; left: 0; right: 0; bottom: 0; height: 100%; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; user-select: auto; }
+
+        .cm-s-material-darker.CodeMirror { background: var(--code-bg) !important; color: #d4d4d4 !important; }
+        .cm-s-material-darker .CodeMirror-gutters { background: var(--code-bg) !important; border-right: 1px solid var(--border) !important; }
+        .cm-s-material-darker .cm-keyword { color: #C586C0 !important; } 
+        .cm-s-material-darker .cm-builtin, .cm-s-material-darker .cm-def { color: #DCDCAA !important; } 
+        .cm-s-material-darker .cm-string { color: #CE9178 !important; } 
+        .cm-s-material-darker .cm-number { color: #B5CEA8 !important; } 
+        .cm-s-material-darker .cm-comment { color: #6A9955 !important; } 
+        .cm-s-material-darker .cm-variable { color: #9CDCFE !important; } 
+        .cm-s-material-darker .cm-tag { color: #569cd6 !important; } 
+        .cm-s-material-darker .cm-attribute { color: #9cdcfe !important; } 
+        .cm-s-material-darker .cm-meta { color: #808080 !important; }
+
+        .statusbar { min-height: 28px; background-color: var(--accent); color: #fff; display: flex; align-items: center; padding: 4px 15px; font-size: 12px; justify-content: space-between; flex-shrink: 0; }
+        .status-left { display: flex; gap: 15px; }
+
+        .modal-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9998; display: none; justify-content: center; align-items: center; }
+        .modal-box { background: var(--toolbar-bg); border: 1px solid var(--border); width: 350px; padding: 15px; display: flex; flex-direction: column; gap: 10px; color: var(--text-main); border-radius: 4px; z-index: 9999; }
+        .modal-input { width: 100%; background: var(--bg-editor); border: 1px solid var(--border); color: var(--text-main); padding: 6px; font-size: 12px; outline: none; border-radius: 2px; user-select: auto; }
+        
+        .custom-select-trigger {
+            background: var(--bg-editor); border: 1px solid var(--border); color: var(--text-main);
+            padding: 6px 10px; font-size: 12px; border-radius: 2px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+        }
+        .custom-select-options {
+            display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--toolbar-bg);
+            border: 1px solid var(--border); border-radius: 2px; z-index: 10005; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .custom-select-options.open { display: block; }
+        .custom-select-option { padding: 6px 10px; font-size: 12px; cursor: pointer; color: var(--text-main); }
+        .custom-select-option:hover { background: var(--accent); color: #fff; }
+
+        .settings-nav { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+        .settings-tab-btn { padding: 6px 14px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; border-bottom: 2px solid transparent; }
+        .settings-tab-btn.active { color: #fff; border-bottom-color: var(--accent); font-weight: bold; }
+        .settings-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border); position: relative; }
+        
+        .color-palette-grid { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+        .palette-swatch { width: 22px; height: 22px; border-radius: 3px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); }
+        .palette-swatch:hover { transform: scale(1.15); border-color: #fff; }
+
+        .keybind-btn { padding: 4px 10px; background: var(--bg-editor); border: 1px solid var(--border); color: #569cd6; font-family: monospace; font-size: 11px; border-radius: 3px; cursor: pointer; min-width: 90px; text-align: center; }
+        .keybind-btn:hover { border-color: var(--accent); }
+        .keybind-btn.recording { background: #ff5252; color: #fff; border-color: #ff5252; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.6; } }
+
+        .inspector-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; color: var(--text-main); }
+        .inspector-table td { padding: 6px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .inspector-table td.label { color: var(--text-muted); width: 35%; }
+
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10000; display: none; flex-direction: column; justify-content: center; align-items: center; }
+        .spinner { width: 44px; height: 44px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        #copy-picker-wrapper { flex: 1; position: relative; width: 100%; height: 100%; background: var(--bg-editor); display: none; flex-direction: column; padding: 25px; overflow: hidden; }
+        .copy-header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
+        .copy-title { font-size: 18px; font-weight: 600; color: #fff; }
+        .copy-search-bar input { width: 100%; padding: 8px 12px; background: var(--bg-sidebar); border: 1px solid var(--border); color: #fff; font-size: 13px; border-radius: 3px; outline: none; user-select: auto; }
+        
+        .copy-recents-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; min-height: 24px; }
+        .copy-recent-chip { padding: 4px 10px; font-size: 11px; background: var(--toolbar-bg); border: 1px solid var(--accent); color: #fff; border-radius: 3px; cursor: pointer; transition: all 0.15s ease; font-weight: 600; }
+        .copy-recent-chip:hover { background: var(--accent); }
+
+        .copy-grid-container { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; align-content: start; }
+        .copy-res-card { background: var(--bg-sidebar); border: 1px solid var(--border); padding: 10px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .copy-res-card:hover { background: var(--bg-active); border-color: var(--accent); color: #fff; }
+        .copy-res-card.recent-highlight { border: 1px solid var(--accent); box-shadow: 0 0 6px rgba(0, 122, 204, 0.4); }
+        .copy-res-card.selected { background: #04395e; border-color: var(--accent); color: #fff; }
+
+        #welcome-modal {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.65);
+            -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px);
+            z-index: 10001;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .welcome-card {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 650px;
+            border-radius: 6px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: fadeInScale 0.15s ease-out;
+        }
+        @keyframes fadeInScale { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+        .welcome-header { padding: 16px 22px; background: var(--titlebar-bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .welcome-header h2 { font-size: 16px; color: #fff; display: flex; align-items: center; gap: 8px; }
+        .welcome-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; }
+        .welcome-feature-item { display: flex; gap: 14px; align-items: flex-start; }
+        .welcome-feature-icon { font-size: 17px; line-height: 1; padding: 8px; background: var(--toolbar-bg); border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0; }
+        .welcome-feature-text h4 { font-size: 13px; color: #fff; margin-bottom: 3px; }
+        .welcome-feature-text p { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+        .welcome-footer { padding: 14px 22px; background: var(--titlebar-bg); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+
+        .context-menu { position: absolute; background: var(--toolbar-bg); border: 1px solid var(--border); display: none; flex-direction: column; z-index: 1000; padding: 4px 0; min-width: 150px; }
+        .context-menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; color: var(--text-main);}
+        .context-menu-item:hover { background: var(--accent); color: #fff; }
+    </style>
+</head>
+<body>
+
+<div id="dre-backdrop-blur"></div>
+
+<div class="vscode-container" id="main-container">
+    <div class="titlebar">
+        <div class="title" id="dre-titlebar-text">Dynamic Resource Editor - Admin Mode</div>
+        <div class="window-controls">
+            <button class="btn-icon" id="btn-check-updater" onclick="triggerCheckUpdate()" title="Check for GitHub Updates">&#128259;</button>
+            <button class="btn-icon" onclick="openWelcomeModal(true)" title="What's New">&#10024;</button>
+            <button class="btn-icon" onclick="openSettingsModal()" title="Preferences">&#9881;</button>
+            <button class="btn-close" onclick="attemptCloseEditor()" title="Close">&#10005;</button>
+        </div>
+    </div>
+
+    <div class="workspace" id="workspace-layout">
+        <div class="sidebar" id="module-sidebar">
+            <div class="search-box">
+                <input type="text" id="searchRes" placeholder="Filter resources..." oninput="filterResources()">
+                <div class="filter-chips">
+                    <span class="filter-chip active" id="filter-chip-all" onclick="setCategoryFilter('all')">All</span>
+                    <span class="filter-chip" id="filter-chip-map" onclick="setCategoryFilter('map')">Maps</span>
+                    <span class="filter-chip" id="filter-chip-script" onclick="setCategoryFilter('script')">Scripts</span>
+                    <span class="filter-chip" id="filter-chip-shader" onclick="setCategoryFilter('shader')">Shaders</span>
+                </div>
+            </div>
+            
+            <div class="list-section">
+                <div class="section-title">Resources <span style="cursor:pointer;" onclick="triggerMTA('editor:requestLogs')" title="Activity Logs">&#128220;</span></div>
+                <div id="resources-list" class="list-container"></div>
+            </div>
+            
+            <div class="list-section">
+                <div class="section-title">Files <span style="font-size:10px; color:var(--text-muted);">[CTRL+Click for Multi]</span></div>
+                <div id="files-list" class="list-container"></div>
+            </div>
+
+            <div class="sidebar-actions">
+                <button class="btn-side" id="btn-create-file" onclick="promptAction('create')">&#128196; New</button>
+                <button class="btn-side" id="btn-copy-file" onclick="openCopyPicker()">&#10697; Copy</button>
+                <button class="btn-side" id="btn-rename-file" onclick="ctxRename()">&#9998; Rename</button>
+                <button class="btn-side" id="btn-delete-file" onclick="promptAction('delete')" style="color: #ff5252;">&#10005; Delete</button>
+                <button class="btn-side" onclick="triggerMTA('editor:onStartObjectSelection')" style="color: #4CAF50; grid-column: span 2;">&#127919; Select Object</button>
+                <button class="btn-side" id="btn-backups" onclick="promptRestoreResource()" style="color:#FF9800; grid-column: span 2;">&#8634; Backups</button>
+            </div>
+        </div>
+
+        <div class="editor-area">
+            <div class="tabs-bar" id="tabs-bar"></div>
+            
+            <div class="editor-toolbar" id="module-toolbar">
+                <div class="custom-dropdown" id="dropdown-templates-wrapper">
+                    <button class="btn-action secondary" onclick="toggleTplDropdown(event)">Templates &#9662;</button>
+                    <div class="dropdown-content" id="tpl-menu">
+                        <div onclick="insertTemplate('jump')">Jump Marker</div>
+                        <div onclick="insertTemplate('tp')">Teleport Marker</div>
+                        <div onclick="insertTemplate('bw')">BW Bounce Marker</div>
+                        <div onclick="insertTemplate('pushtp')">PushTo Marker</div>
+                        <div onclick="insertTemplate('slowmo')">SlowMo Marker</div>
+                        <div onclick="insertTemplate('exprot')">Explosion Rotation Marker</div>
+                        <div onclick="insertTemplate('rotmod')">Rotation Modifier Marker</div>
+                        <div onclick="insertTemplate('revblow')">Reverse Blow Marker</div>
+                    </div>
+                </div>
+
+                <div class="toolbar-right-actions">
+                    <button class="btn-action btn-format-code" id="btn-format-file" onclick="formatActiveFile()">&#9776; Format Code</button>
+                    <button class="btn-action" id="btn-save-file" onclick="saveActiveTab()">Save File</button>
+                    <button class="btn-action btn-revert-file" id="btn-revert-file" onclick="revertActiveTab()">Revert</button>
+                </div>
+            </div>
+            
+            <div id="empty-workspace-state">
+                <span style="font-size: 32px; opacity: 0.3;">📂</span>
+                <span>No file currently open</span>
+                <span style="font-size: 11px;">Select a resource and double-click a file to begin editing.</span>
+            </div>
+
+            <div id="editor-wrapper"><textarea id="code"></textarea></div>
+            <div id="inspector-wrapper"></div>
+
+            <div id="copy-picker-wrapper">
+                <div class="copy-header">
+                    <div class="copy-title"><span>&#10697; Copy Files</span></div>
+                    <div class="copy-search-bar">
+                        <input type="text" id="copy-filter-input" placeholder="Search target resource..." oninput="filterCopyPicker()">
+                    </div>
+                    
+                    <div class="filter-chips">
+                        <span class="filter-chip active" id="copy-chip-all" onclick="setCopyCategoryFilter('all')">All</span>
+                        <span class="filter-chip" id="copy-chip-map" onclick="setCopyCategoryFilter('map')">Maps</span>
+                        <span class="filter-chip" id="copy-chip-script" onclick="setCopyCategoryFilter('script')">Scripts</span>
+                        <span class="filter-chip" id="copy-chip-shader" onclick="setCopyCategoryFilter('shader')">Shaders</span>
+                    </div>
+
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Recent Targets:</div>
+                    <div class="copy-recents-bar" id="copy-recents-list"></div>
+                </div>
+                
+                <div class="copy-grid-container" id="copy-grid"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px;">
+                    <button class="btn-action btn-secondary-slate" onclick="closeCopyPicker()">Cancel</button>
+                    <button class="btn-action" onclick="executeCopyPicker()">Copy Files Now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="statusbar">
+        <div class="status-left"><span id="status-text">Ready</span><span id="file-info">-</span></div>
+        <div class="status-right" id="file-mode">No File Open</div>
+    </div>
+    
+    <div id="loading-overlay" class="loading-overlay"><div class="spinner"></div><div id="loading-text" style="color:#fff; margin-top:10px;">Processing...</div></div>
+
+    <!-- Preferences Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-box" style="width: 520px; max-height: 560px;">
+            <div class="settings-nav">
+                <button class="settings-tab-btn active" id="btn-tab-general" onclick="switchSettingsTab('general')">General</button>
+                <button class="settings-tab-btn" id="btn-tab-keybinds" onclick="switchSettingsTab('keybinds')">Key Binds</button>
+            </div>
+            
+            <div id="settings-pane-general">
+                <div class="settings-row">
+                    <label>Color Theme</label>
+                    <div style="position:relative; width:180px;">
+                        <div class="custom-select-trigger" onclick="toggleCustomSelect('theme-opts')"><span id="sel-label-theme">Default Dark</span> &#9662;</div>
+                        <div class="custom-select-options" id="theme-opts">
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'default', 'Default Dark')">Default Dark</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'midnight', 'Midnight Blue')">Midnight Blue</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'cyberpunk', 'Cyberpunk Neon')">Cyberpunk Neon</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'synthwave', 'Synthwave \'84')">Synthwave '84</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'monokai', 'Monokai Pro')">Monokai Pro</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'solarized', 'Solarized Dark')">Solarized Dark</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'dracula', 'Dracula Blood')">Dracula Blood</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('theme', 'light', 'Light Theme')">Light Theme</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label>Custom Accent Color</label>
+                        <input type="text" id="accent-hex-input" class="modal-input" style="width:90px; font-family:monospace; text-align:center;" maxlength="7" placeholder="#007acc" oninput="onAccentHexChange(this.value)">
+                    </div>
+                    <div class="color-palette-grid">
+                        <div class="palette-swatch" style="background:#007acc;" onclick="applyAccentColor('#007acc')" title="VSCode Blue"></div>
+                        <div class="palette-swatch" style="background:#00ff66;" onclick="applyAccentColor('#00ff66')" title="Neon Toxic Green"></div>
+                        <div class="palette-swatch" style="background:#ff007f;" onclick="applyAccentColor('#ff007f')" title="Cyberpunk Pink"></div>
+                        <div class="palette-swatch" style="background:#ff7edb;" onclick="applyAccentColor('#ff7edb')" title="Synthwave Magenta"></div>
+                        <div class="palette-swatch" style="background:#bd93f9;" onclick="applyAccentColor('#bd93f9')" title="Dracula Purple"></div>
+                        <div class="palette-swatch" style="background:#fd971f;" onclick="applyAccentColor('#fd971f')" title="Monokai Orange"></div>
+                        <div class="palette-swatch" style="background:#2aa198;" onclick="applyAccentColor('#2aa198')" title="Solarized Cyan"></div>
+                        <div class="palette-swatch" style="background:#ff5252;" onclick="applyAccentColor('#ff5252')" title="Crimson Red"></div>
+                        <div class="palette-swatch" style="background:#e5c07b;" onclick="applyAccentColor('#e5c07b')" title="Warm Gold"></div>
+                    </div>
+                </div>
+
+                <div class="settings-row">
+                    <label>Font Size</label>
+                    <div style="position:relative; width:180px;">
+                        <div class="custom-select-trigger" onclick="toggleCustomSelect('fontsize-opts')"><span id="sel-label-fontsize">14 px</span> &#9662;</div>
+                        <div class="custom-select-options" id="fontsize-opts">
+                            <div class="custom-select-option" onclick="chooseSelectOption('fontsize', '12px', '12 px')">12 px</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('fontsize', '14px', '14 px')">14 px</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('fontsize', '16px', '16 px')">16 px</div>
+                            <div class="custom-select-option" onclick="chooseSelectOption('fontsize', '18px', '18 px')">18 px</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-row"><label for="pref-wrapping">Line Wrapping</label><input type="checkbox" id="pref-wrapping" checked onchange="applyUserPreferences()"></div>
+                <div class="settings-row"><label for="pref-autosave">Auto-Save on Idle (2.5s delay)</label><input type="checkbox" id="pref-autosave" onchange="applyUserPreferences()"></div>
+                <div class="settings-row"><label for="pref-autorestart">Auto-Restart Resource on Save</label><input type="checkbox" id="pref-autorestart" checked onchange="applyUserPreferences()"></div>
+                
+                <div class="settings-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label for="pref-bgblur">Background Dimming</label>
+                        <input type="checkbox" id="pref-bgblur" onchange="applyUserPreferences()">
+                    </div>
+                    <div id="bgblur-slider-row" style="display:none; align-items:center; gap:10px; margin-top:4px;">
+                        <input type="range" id="pref-bgblur-range" min="10" max="90" value="50" style="flex:1; cursor:pointer; accent-color:var(--accent);" oninput="onBlurRangeChange(this.value)">
+                        <span id="bgblur-val-label" style="font-family:monospace; font-size:11px; width:35px; color:var(--text-muted);">50%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="settings-pane-keybinds" style="display:none; max-height:320px; overflow-y:auto;">
+                <div class="settings-row"><label>Save Active File</label><button class="keybind-btn" id="bind-save" onclick="startRebind('save')">Ctrl + S</button></div>
+                <div class="settings-row"><label>Close Active Tab</label><button class="keybind-btn" id="bind-closeTab" onclick="startRebind('closeTab')">Ctrl + W</button></div>
+                <div class="settings-row"><label>Format Code</label><button class="keybind-btn" id="bind-format" onclick="startRebind('format')">Alt + F</button></div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                <button class="btn-action" onclick="closeSettingsModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Input Action Modal (New File / Rename / Delete) -->
+    <div id="prompt-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div id="prompt-title" style="font-weight:bold; font-size:13px; color:#fff;">Action</div>
+            <input type="text" id="prompt-input" class="modal-input" placeholder="Enter name...">
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+                <button class="btn-action btn-secondary-slate" onclick="closePromptModal()">Cancel</button>
+                <button class="btn-action" id="prompt-confirm-btn" onclick="confirmPromptModal()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Logs Modal -->
+    <div id="logs-modal" class="modal-overlay">
+        <div class="modal-box" style="width: 580px; max-height: 520px;">
+            <div style="font-weight:bold; font-size:14px; color:#fff; border-bottom:1px solid var(--border); padding-bottom:6px;">📋 Activity Logs</div>
+            <div id="logs-content" style="max-height: 380px; overflow-y: auto; font-family: monospace; font-size: 11px; display: flex; flex-direction: column; gap: 4px; padding: 4px;"></div>
+            <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+                <button class="btn-action btn-secondary-slate" onclick="closeLogsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backups Modal -->
+    <div id="backups-modal" class="modal-overlay">
+        <div class="modal-box" style="width: 540px; max-height: 520px;">
+            <div style="font-weight:bold; font-size:14px; color:#FF9800; border-bottom:1px solid var(--border); padding-bottom:6px;">↺ Resource Backups</div>
+            <div id="backups-content" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px;"></div>
+            <div style="display:flex; justify-content:flex-end; margin-top:6px;">
+                <button class="btn-action btn-secondary-slate" onclick="closeBackupsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Changelog Modal v3.0 (Opens first, single button) -->
+<div id="welcome-modal">
+    <div class="welcome-card">
+        <div class="welcome-header">
+            <h2>&#10024; Welcome to DRE v3.0</h2>
+            <span style="font-size:11px; background:var(--accent); color:#fff; padding:3px 8px; border-radius:12px; font-weight:bold;">Changelog</span>
+        </div>
+        <div class="welcome-body">
+            <div class="welcome-feature-item">
+                <div class="welcome-feature-icon">&#127912;</div>
+                <div class="welcome-feature-text">
+                    <h4>Modernized User Interface & Customization</h4>
+                    <p>Updated Design: clean visual presentation, multiple new themes (including Cyberpunk, Synthwave '84, Monokai, and Dracula), and full color customization found directly in Preferences.</p>
+                </div>
+            </div>
+            <div class="welcome-feature-item">
+                <div class="welcome-feature-icon">&#9000;</div>
+                <div class="welcome-feature-text">
+                    <h4>Customizable Keybinds & Enhanced UX</h4>
+                    <p>Integrated configurable hotkeys for streamlined workflow efficiency, alongside automated code formatting and intelligent editor shortcuts.</p>
+                </div>
+            </div>
+            <div class="welcome-feature-item">
+                <div class="welcome-feature-icon">&#10697;</div>
+                <div class="welcome-feature-text">
+                    <h4>Quality of Life (QoL) Enhancements</h4>
+                    <p>Interactive resource category filter chips, an upgraded file transfer window with real-time search, filters, recent target suggestions, and dedicated icons for each relevant file format.</p>
+                </div>
+            </div>
+            <div class="welcome-feature-item">
+                <div class="welcome-feature-icon">&#128259;</div>
+                <div class="welcome-feature-text">
+                    <h4>Embedded Version Management</h4>
+                    <p>Seamless update synchronization integrated directly into the editor interface—eliminating the need for manual console commands.</p>
+                </div>
+            </div>
+        </div>
+        <div class="welcome-footer">
+            <button class="btn-action" onclick="confirmChangelogUntilNextUpdate()">Got it! (Show again on next update)</button>
+        </div>
+    </div>
+</div>
+
+<div id="context-menu" class="context-menu">
+    <div class="context-menu-item" onclick="openCopyPicker()">Copy to...</div>
+    <div class="context-menu-item" onclick="ctxRename()">Rename</div>
+    <div class="context-menu-item" onclick="promptAction('delete')" style="color:#ff5252;">Delete</div>
+</div>
+
+<script>
+    let CURRENT_DRE_VERSION = "3.0";
+
+    let editor;
+    let allResources = [];
+    let selectedResource = null;
+    let selectedFile = null;
+    let selectedFiles = []; 
+    let openTabs = [];
+    let activeTabId = null;
+    let suppressDirty = false;
+    let inspectorCounter = 0;
+
+    let isCurrentUserAdmin = false;
+    let currentUserAccessLevel = "editor";
+    let activeCategoryFilter = "all";
+    let activeCopyCategoryFilter = "all";
+    
+    let localRecentResources = [];
+    let serverRecentTargets = [];
+
+    let currentSelectTheme = "default";
+    let currentSelectFontSize = "14px";
+    let isApplyingPreferences = false;
+
+    let activeModalAction = null;
+
+    let isCtrlDown = false;
+    window.addEventListener("keydown", (e) => { if (e.key === "Control" || e.ctrlKey) isCtrlDown = true; });
+    window.addEventListener("keyup", (e) => { if (e.key === "Control" || !e.ctrlKey) isCtrlDown = false; });
+    window.addEventListener("blur", () => { isCtrlDown = false; });
+
+    function trackActiveResource(resName) {
+        if (!resName) return;
+        localRecentResources = [resName, ...localRecentResources.filter(r => r !== resName)].slice(0, 5);
+        try {
+            localStorage.setItem("dre_local_recent_res", JSON.stringify(localRecentResources));
+        } catch(e) {}
+    }
+
+    function getCombinedRecentTargets() {
+        let combined = [];
+        let seen = {};
+        [...localRecentResources, ...serverRecentTargets].forEach(r => {
+            if (r && !seen[r]) {
+                seen[r] = true;
+                combined.push(r);
+            }
+        });
+        return combined.slice(0, 5);
+    }
+
+    function getFileIcon(fileName) {
+        if (!fileName) return "📄";
+        let ext = fileName.split('.').pop().toLowerCase();
+        if (ext === "lua") return "📜";
+        if (ext === "fx" || ext === "hlsl") return "✨";
+        if (ext === "map") return "🗺️";
+        if (["png", "jpg", "jpeg", "tga", "dds"].includes(ext)) return "🖼";
+        if (ext === "xml" || ext === "html") return "🧰";
+        return "📄";
+    }
+
+    function toggleTplDropdown(e) {
+        e.stopPropagation();
+        let menu = document.getElementById("tpl-menu");
+        if (menu) menu.classList.toggle("show");
+    }
+
+    function insertTemplate(type) {
+        if (!editor || !isCurrentUserAdmin) return;
+        let snippet = "";
+        if (type === "jump") {
+            snippet = `-- Jump Marker\nlocal jMarker = createMarker(0, 0, 0, "corona", 2.25, 255, 255, 255, 255)\naddEventHandler("onClientMarkerHit", jMarker, function(hitPlayer)\n    if hitPlayer == localPlayer and isPedInVehicle(hitPlayer) then\n        setElementVelocity(getPedOccupiedVehicle(hitPlayer), 0, 0.5, 5)\n    end\nend)\n`;
+        } else if (type === "tp") {
+            snippet = `-- Teleport Marker\nlocal tpMarker = createMarker(0, 0, 0, "corona", 2.25, 255, 255, 255, 255)\naddEventHandler("onClientMarkerHit", tpMarker, function(hitPlayer)\n    if hitPlayer == localPlayer and isPedInVehicle(hitPlayer) then\n        setElementPosition(getPedOccupiedVehicle(hitPlayer), 0, 0, 10)\n    end\nend)\n`;
+        } else if (type === "bw") {
+            snippet = `-- BW Bounce Marker\nlocal bwMarker = createMarker(0, 0, 0, "corona", 4.0, 0, 0, 0, 0)\naddEventHandler("onClientMarkerHit", bwMarker, function(hitPlayer)\n    if hitPlayer == localPlayer and isPedInVehicle(hitPlayer) then\n        local veh = getPedOccupiedVehicle(hitPlayer)\n        local vx, vy, vz = getElementVelocity(veh)\n        setElementVelocity(veh, -vx, -vy, -vz)\n    end\nend)\n`;
+        } else if (type === "slowmo") {
+            snippet = `-- SlowMo Marker\nlocal sMarker = createMarker(0, 0, 0, "corona", 2.25, 255, 255, 255, 255)\naddEventHandler("onClientMarkerHit", sMarker, function(hitPlayer)\n    if hitPlayer == localPlayer then setGameSpeed(0.4) end\nend)\n`;
+        } else {
+            snippet = `-- Custom Template Marker\nlocal cMarker = createMarker(0, 0, 0, "corona", 2.25, 255, 255, 255, 255)\n`;
+        }
+        
+        let doc = editor.getDoc();
+        doc.replaceRange("\n" + snippet, doc.getCursor());
+        document.getElementById("tpl-menu").classList.remove("show");
+        editor.focus();
+    }
+
+    function toggleCustomSelect(id) {
+        let el = document.getElementById(id);
+        let isOpen = el.classList.contains("open");
+        document.querySelectorAll(".custom-select-options").forEach(o => o.classList.remove("open"));
+        if (!isOpen) el.classList.add("open");
+    }
+
+    function chooseSelectOption(type, val, label) {
+        if (type === "theme") {
+            currentSelectTheme = val;
+            document.getElementById("sel-label-theme").innerText = label;
+            applyUserPreferences();
+        } else if (type === "fontsize") {
+            currentSelectFontSize = val;
+            document.getElementById("sel-label-fontsize").innerText = label;
+            applyUserPreferences();
+        }
+        document.querySelectorAll(".custom-select-options").forEach(o => o.classList.remove("open"));
+    }
+
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".custom-select-trigger") && !e.target.closest(".custom-select-options")) {
+            document.querySelectorAll(".custom-select-options").forEach(o => o.classList.remove("open"));
+        }
+        if (!e.target.closest(".custom-dropdown")) {
+            let tpl = document.getElementById("tpl-menu");
+            if (tpl) tpl.classList.remove("show");
+        }
+        if (!e.target.closest(".context-menu")) {
+            document.getElementById("context-menu").style.display = "none";
+        }
+    });
+
+    function onAccentHexChange(hex) {
+        if (!hex) return;
+        if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+            applyAccentColor(hex);
+        }
+    }
+
+    function applyAccentColor(hex) {
+        if (!hex) return;
+        document.documentElement.style.setProperty("--accent", hex);
+        localStorage.setItem("dre_accent_color", hex);
+        document.getElementById("accent-hex-input").value = hex;
+        
+        let styleTag = document.getElementById("dre-dynamic-accent-style");
+        if (!styleTag) {
+            styleTag = document.createElement("style");
+            styleTag.id = "dre-dynamic-accent-style";
+            document.head.appendChild(styleTag);
+        }
+        styleTag.innerHTML = `
+            .btn-action:not(.btn-format-code):not(.btn-revert-file):not(.btn-secondary-slate) { background-color: ${hex} !important; }
+            .statusbar { background-color: ${hex} !important; }
+            .tab.active { border-top-color: ${hex} !important; }
+            .list-item.selected { background-color: ${hex} !important; }
+            .filter-chip.active { background-color: ${hex} !important; border-color: ${hex} !important; }
+        `;
+        if (!isApplyingPreferences) applyUserPreferences();
+    }
+
+    function onBlurRangeChange(val) {
+        document.getElementById("bgblur-val-label").innerText = val + "%";
+        let backdrop = document.getElementById("dre-backdrop-blur");
+        let alpha = (parseInt(val) / 100).toFixed(2);
+        backdrop.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+        localStorage.setItem("dre_bg_dim_val", val);
+        if (!isApplyingPreferences) applyUserPreferences();
+    }
+
+    // Keybinds (Save, Close, Format)
+    let keybinds = {
+        save: { ctrl: true, alt: false, shift: false, key: "s" },
+        closeTab: { ctrl: true, alt: false, shift: false, key: "w" },
+        format: { ctrl: false, alt: true, shift: false, key: "f" }
+    };
+    let recordingAction = null;
+
+    function formatKeyCombination(bind) {
+        if (!bind) return "None";
+        let parts = [];
+        if (bind.ctrl) parts.push("Ctrl");
+        if (bind.shift) parts.push("Shift");
+        if (bind.alt) parts.push("Alt");
+        parts.push(bind.key.toUpperCase());
+        return parts.join(" + ");
+    }
+
+    function loadKeybinds() {
+        let saved = localStorage.getItem("dre_keybinds");
+        if (saved) {
+            try { keybinds = Object.assign(keybinds, JSON.parse(saved)); } catch (e) {}
+        }
+        for (let action in keybinds) {
+            let el = document.getElementById("bind-" + action);
+            if (el) el.innerText = formatKeyCombination(keybinds[action]);
+        }
+    }
+
+    function startRebind(action) {
+        recordingAction = action;
+        document.querySelectorAll(".keybind-btn").forEach(b => b.classList.remove("recording"));
+        let btn = document.getElementById("bind-" + action);
+        if (btn) {
+            btn.classList.add("recording");
+            btn.innerText = "Press key...";
+        }
+    }
+
+    function checkKeyMatch(e, bind) {
+        if (!bind) return false;
+        return e.ctrlKey === bind.ctrl &&
+               e.altKey === bind.alt &&
+               e.shiftKey === bind.shift &&
+               e.key.toLowerCase() === bind.key.toLowerCase();
+    }
+
+    window.addEventListener("keydown", (e) => {
+        if (recordingAction) {
+            e.preventDefault(); e.stopPropagation();
+            if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+
+            keybinds[recordingAction] = {
+                ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey,
+                key: e.key.toLowerCase()
+            };
+            localStorage.setItem("dre_keybinds", JSON.stringify(keybinds));
+            loadKeybinds();
+            document.querySelectorAll(".keybind-btn").forEach(b => b.classList.remove("recording"));
+            recordingAction = null;
+            applyUserPreferences();
+            return;
+        }
+
+        if (checkKeyMatch(e, keybinds.save)) {
+            e.preventDefault(); e.stopPropagation();
+            saveActiveTab();
+        } else if (checkKeyMatch(e, keybinds.closeTab)) {
+            e.preventDefault(); e.stopPropagation();
+            if (activeTabId) attemptCloseTab(activeTabId);
+        } else if (checkKeyMatch(e, keybinds.format)) {
+            e.preventDefault(); e.stopPropagation();
+            formatActiveFile();
+        }
+    }, true);
+
+    // Inspector
+    function showInspectedElement(p) {
+        closeCopyPicker();
+        inspectorCounter++;
+        let tabTitle = p.name ? p.name.replace(/"/g, "") : `Element #${inspectorCounter}`;
+        let uniqueSnippetId = "ins-snippet-" + inspectorCounter;
+        let id = "INSPECTOR::" + tabTitle + "::" + inspectorCounter;
+        
+        let snippetText = "";
+        let rowsHtml = `<tr><td class="label">Target</td><td style="font-weight:bold; color:#569cd6;">${p.name}</td></tr>`;
+        rowsHtml += `<tr><td class="label">Position X</td><td style="font-family:monospace;">${p.x}</td></tr>`;
+        rowsHtml += `<tr><td class="label">Position Y</td><td style="font-family:monospace;">${p.y}</td></tr>`;
+        rowsHtml += `<tr><td class="label">Position Z</td><td style="font-family:monospace;">${p.z}</td></tr>`;
+
+        if (p.isMarker) {
+            rowsHtml += `<tr><td class="label">Marker Type</td><td>${p.markerType}</td></tr>`;
+            rowsHtml += `<tr><td class="label">Size</td><td>${p.size}</td></tr>`;
+            
+            if (p.isJump) {
+                rowsHtml += `<tr><td class="label" style="color:#4CAF50;">Velocity X</td><td style="font-family:monospace; color:#4CAF50;">${p.vx}</td></tr>`;
+                rowsHtml += `<tr><td class="label" style="color:#4CAF50;">Velocity Y</td><td style="font-family:monospace; color:#4CAF50;">${p.vy}</td></tr>`;
+                rowsHtml += `<tr><td class="label" style="color:#4CAF50;">Velocity Z</td><td style="font-family:monospace; color:#4CAF50;">${p.vz}</td></tr>`;
+                snippetText = `-- Jump Marker\nlocal jumpMarker = createMarker(${p.x}, ${p.y}, ${p.z}, "${p.markerType}", ${p.size}, 0, 0, 255, 255)\n\nfunction onJumpMarkerHit(player)\n    if player == localPlayer and isPedInVehicle(player) then\n        local vehicle = getPedOccupiedVehicle(player)\n        if vehicle then\n            setElementVelocity(vehicle, ${p.vx}, ${p.vy}, ${p.vz})\n        end\n    end\nend\naddEventHandler("onClientMarkerHit", jumpMarker, onJumpMarkerHit)\n`;
+            } else {
+                snippetText = `local marker = createMarker(${p.x}, ${p.y}, ${p.z}, "${p.markerType}", ${p.size}, 0, 0, 255, 255)\n`;
+            }
+        } else {
+            rowsHtml += `<tr><td class="label">Rotation X</td><td style="font-family:monospace;">${p.rx}</td></tr>`;
+            rowsHtml += `<tr><td class="label">Rotation Y</td><td style="font-family:monospace;">${p.ry}</td></tr>`;
+            rowsHtml += `<tr><td class="label">Rotation Z</td><td style="font-family:monospace;">${p.rz}</td></tr>`;
+            snippetText = `local object = createObject(${p.name.split(' ')[0]}, ${p.x}, ${p.y}, ${p.z}, ${p.rx}, ${p.ry}, ${p.rz})\n`;
+        }
+
+        let insertBtnHtml = isCurrentUserAdmin ? `<button class="btn-action" onclick="insertInspectorCode('${uniqueSnippetId}')" style="flex:1;">Insert into Code</button>` : '';
+
+        let htmlContent = `
+            <div style="color: var(--text-main); max-width: 580px;">
+                <h2 style="color: #4CAF50; margin-bottom: 15px; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">&#127919; Element Properties</h2>
+                <table class="inspector-table">${rowsHtml}</table>
+                <h3 style="font-size: 12px; margin-bottom: 5px; color: var(--text-muted);">Generated Code Snippet:</h3>
+                <textarea id="${uniqueSnippetId}" readonly style="width: 100%; height: 110px; background: var(--toolbar-bg); color: #CE9178; border: 1px solid var(--border); padding: 8px; font-family: monospace; font-size: 12px; resize: none; outline: none; margin-bottom: 10px;">${snippetText}</textarea>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-action btn-format-code" onclick="copyInspectorCode('${uniqueSnippetId}')" style="flex:1;">Copy to Clipboard</button>
+                    ${insertBtnHtml}
+                </div>
+            </div>
+        `;
+
+        let tab = { id: id, res: "INSPECTOR", file: tabTitle, isInspector: true, html: htmlContent, isDirty: false };
+        openTabs.push(tab);
+        switchTab(id);
+    }
+
+    function copyInspectorCode(snippetId) {
+        let copyText = document.getElementById(snippetId);
+        if(!copyText) return;
+        copyText.select();
+        document.execCommand("copy");
+        updateStatus("Code copied!", "#4CAF50");
+        setTimeout(() => updateStatus("Ready", "#007acc"), 2000);
+    }
+
+    function insertInspectorCode(snippetId) {
+        if (!isCurrentUserAdmin) return;
+        let snippetElem = document.getElementById(snippetId);
+        if(!snippetElem) return;
+        let code = snippetElem.value;
+        let lastCodeTab = openTabs.slice().reverse().find(t => !t.isInspector);
+        if(!lastCodeTab) return alert("No open script file to insert into!");
+        switchTab(lastCodeTab.id);
+        let doc = editor.getDoc();
+        let lastLine = doc.lineCount();
+        let currentText = doc.getValue();
+        let prefix = (currentText.length > 0 && !currentText.endsWith("\n")) ? "\n\n" : "\n";
+        doc.replaceRange(prefix + code, { line: lastLine, ch: 0 });
+        editor.setCursor({ line: doc.lineCount(), ch: 0 });
+        editor.focus();
+        updateStatus("Appended snippet to bottom of " + lastCodeTab.file, "#4CAF50");
+    }
+
+    function formatActiveFile() {
+        if(!editor || !activeTabId || !isCurrentUserAdmin) return;
+        let tab = openTabs.find(t => t.id === activeTabId);
+        if(!tab || tab.isInspector) return;
+
+        let code = editor.getValue();
+        let lines = code.split("\n");
+        let formatted = [];
+        let indent = 0;
+        let step = "    ";
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+            if (line.length === 0) { formatted.push(""); continue; }
+            if (line.match(/^(end|until|else|elseif|\})/i)) { indent = Math.max(0, indent - 1); }
+            let pad = step.repeat(indent);
+            formatted.push(pad + line);
+            if (line.match(/^(function\b|local\s+function\b|if\b|for\b|while\b|repeat\b|else\b|elseif\b|do\b)/i) && !line.match(/\bend\s*$/i)) {
+                indent++;
+            } else if (line.endsWith("{") || (line.endsWith("(") && !line.includes(")"))) {
+                indent++;
+            }
+        }
+
+        let cur = editor.getCursor();
+        editor.setValue(formatted.join("\n"));
+        editor.setCursor(cur);
+        updateStatus("Code formatted!", "#00897b");
+        setTimeout(() => updateStatus("Ready", "#007acc"), 2000);
+    }
+
+    function getModeForExt(fileName) {
+        let ext = fileName.split('.').pop().toLowerCase();
+        if (ext === 'fx' || ext === 'hlsl') return "text/x-c++src";
+        if (ext === 'xml' || ext === 'map') return "application/xml";
+        if (ext === 'html') return "htmlmixed";
+        return "lua";
+    }
+
+    function setEditorContent(content, fileName, resName) {
+        hideLoading();
+        trackActiveResource(resName);
+
+        let id = resName + "::" + fileName;
+        let tab = openTabs.find(t => t.id === id);
+
+        suppressDirty = true;
+        if (!tab) {
+            tab = { id: id, res: resName, file: fileName, content: content, originalContent: content, isDirty: false };
+            openTabs.push(tab);
+            switchTab(id);
+        } else {
+            tab.content = content;
+            tab.originalContent = content;
+            tab.isDirty = false;
+            if (activeTabId === id) {
+                editor.setValue(content);
+                editor.clearHistory();
+            }
+            renderTabs();
+        }
+        setTimeout(() => { suppressDirty = false; }, 80);
+    }
+
+    function resetWorkspaceToEmpty() {
+        activeTabId = null;
+        selectedFile = null;
+        document.getElementById("editor-wrapper").style.display = "none";
+        document.getElementById("inspector-wrapper").style.display = "none";
+        document.getElementById("module-toolbar").style.display = "none";
+        document.getElementById("empty-workspace-state").style.display = "flex";
+        document.getElementById("file-info").innerText = "-";
+        document.getElementById("file-mode").innerText = "No File Open";
+        if (editor) {
+            suppressDirty = true;
+            editor.setValue("");
+            editor.clearHistory();
+            setTimeout(() => { suppressDirty = false; }, 50);
+        }
+        renderTabs();
+    }
+
+    function switchTab(id) {
+        closeCopyPicker();
+        activeTabId = id;
+        let tab = openTabs.find(t => t.id === id);
+        if (!tab) {
+            resetWorkspaceToEmpty();
+            return;
+        }
+
+        document.getElementById("empty-workspace-state").style.display = "none";
+        
+        if (tab.isInspector) {
+            document.getElementById("editor-wrapper").style.display = "none";
+            document.getElementById("module-toolbar").style.display = "none";
+            let ins = document.getElementById("inspector-wrapper");
+            ins.style.display = "block";
+            ins.innerHTML = tab.html;
+            document.getElementById("file-info").innerText = tab.file;
+            document.getElementById("file-mode").innerText = "Inspector Mode";
+            renderTabs();
+            return;
+        }
+
+        document.getElementById("editor-wrapper").style.display = "block";
+        document.getElementById("module-toolbar").style.display = "flex";
+        document.getElementById("inspector-wrapper").style.display = "none";
+
+        selectedResource = tab.res;
+        selectedFile = tab.file;
+        trackActiveResource(tab.res);
+
+        document.getElementById("file-info").innerText = `${tab.res}/${tab.file}`;
+        
+        let mode = getModeForExt(tab.file);
+        let labelMode = "Lua Mode";
+        if (mode === "application/xml") {
+            labelMode = "XML Mode";
+        } else if (mode.includes("c++")) {
+            labelMode = "FX Mode";
+        }
+        document.getElementById("file-mode").innerText = labelMode;
+
+        suppressDirty = true;
+        editor.setOption("mode", mode);
+        editor.setValue(tab.content);
+        editor.clearHistory();
+
+        if (!isCurrentUserAdmin) {
+            editor.setOption("readOnly", "nocursor");
+        } else {
+            editor.setOption("readOnly", false);
+        }
+
+        setTimeout(() => { suppressDirty = false; }, 80);
+        renderTabs();
+    }
+
+    function renderTabs() {
+        let bar = document.getElementById("tabs-bar");
+        bar.innerHTML = "";
+        openTabs.forEach(t => {
+            let d = document.createElement("div");
+            d.className = "tab" + (t.id === activeTabId ? " active" : "");
+            let dot = t.isDirty ? " <span style='color:#9C27B0;'>●</span>" : "";
+            d.innerHTML = `<span class="tab-title-text">${t.file}${dot}</span><span class="tab-close" onclick="event.stopPropagation(); attemptCloseTab('${t.id}')">&#10005;</span>`;
+            d.onclick = () => switchTab(t.id);
+            bar.appendChild(d);
+        });
+    }
+
+    function doesResourceMatchCategory(res, filterCat) {
+        if (filterCat === "all") return true;
+        if (typeof res !== "object") return true;
+        if (filterCat === "map") return !!res.isMap;
+        if (filterCat === "script") return !!res.isScript;
+        if (filterCat === "shader") return !!res.isShader;
+        return true;
+    }
+
+    function setCategoryFilter(cat) {
+        activeCategoryFilter = cat;
+        document.querySelectorAll(".sidebar .filter-chip").forEach(c => c.classList.remove("active"));
+        let chip = document.getElementById("filter-chip-" + cat);
+        if (chip) chip.classList.add("active");
+        filterResources();
+    }
+
+    function setCopyCategoryFilter(cat) {
+        activeCopyCategoryFilter = cat;
+        document.querySelectorAll("#copy-picker-wrapper .filter-chip").forEach(c => c.classList.remove("active"));
+        let chip = document.getElementById("copy-chip-" + cat);
+        if (chip) chip.classList.add("active");
+        filterCopyPicker();
+    }
+
+    function filterResources() {
+        let q = document.getElementById("searchRes").value.toLowerCase();
+        let list = document.getElementById("resources-list");
+        list.innerHTML = "";
+        allResources.forEach(res => {
+            let rName = typeof res === "object" ? res.name : res;
+            if (rName.toLowerCase().includes(q) && doesResourceMatchCategory(res, activeCategoryFilter)) {
+                let div = document.createElement("div");
+                div.className = "list-item" + (selectedResource === rName ? " selected" : "");
+                div.innerText = rName;
+                div.onclick = () => {
+                    selectedResource = rName;
+                    trackActiveResource(rName);
+                    filterResources();
+                    showLoading("Fetching...");
+                    triggerMTA("editor:requestFiles", rName);
+                };
+                list.appendChild(div);
+            }
+        });
+    }
+
+    function updateFileVisualSelection() {
+        document.querySelectorAll('#files-list .list-item').forEach(div => {
+            let name = div.getAttribute("data-filename");
+            if (selectedFiles.includes(name)) {
+                div.classList.add("selected");
+            } else {
+                div.classList.remove("selected");
+            }
+        });
+    }
+
+    function setFiles(files) {
+        hideLoading();
+        selectedFiles = [];
+        selectedFile = null;
+        let list = document.getElementById("files-list");
+        list.innerHTML = "";
+        if (!files || files.length === 0) return list.innerHTML = "<div style='padding:10px; color:var(--text-muted);'>No files</div>";
+        
+        files.sort().forEach(file => {
+            let div = document.createElement("div");
+            div.className = "list-item";
+            div.setAttribute("data-filename", file);
+            div.innerHTML = `<span style="font-size:13px;">${getFileIcon(file)}</span> <span>${file}</span>`;
+            
+            div.onclick = (e) => {
+                let isMulti = e.ctrlKey || isCtrlDown;
+                if (isMulti) {
+                    if (selectedFiles.includes(file)) {
+                        selectedFiles = selectedFiles.filter(f => f !== file);
+                    } else {
+                        selectedFiles.push(file);
+                    }
+                    selectedFile = selectedFiles[selectedFiles.length - 1] || null;
+                } else {
+                    selectedFiles = [file];
+                    selectedFile = file;
+                }
+                updateFileVisualSelection();
+            };
+            
+            div.oncontextmenu = (e) => {
+                e.preventDefault();
+                if (!isCurrentUserAdmin) return;
+                if (!selectedFiles.includes(file)) {
+                    selectedFiles = [file];
+                    selectedFile = file;
+                    updateFileVisualSelection();
+                }
+                let menu = document.getElementById("context-menu");
+                menu.style.display = "flex"; menu.style.left = e.pageX + "px"; menu.style.top = e.pageY + "px";
+            };
+            
+            div.ondblclick = () => {
+                showLoading("Loading...");
+                triggerMTA("editor:requestContent", selectedResource, file);
+            };
+            list.appendChild(div);
+        });
+    }
+
+    // ==========================================
+    // ACTION MODALS: NEW, RENAME, DELETE, BACKUPS, LOGS
+    // ==========================================
+    function promptAction(act) {
+        if (!isCurrentUserAdmin) return;
+        if (!selectedResource) return alert("Select a resource first!");
+        
+        activeModalAction = act;
+        let pModal = document.getElementById("prompt-modal");
+        let pTitle = document.getElementById("prompt-title");
+        let pInput = document.getElementById("prompt-input");
+        let pBtn = document.getElementById("prompt-confirm-btn");
+
+        if (act === "create") {
+            pTitle.innerText = `Create New File in [${selectedResource}]`;
+            pInput.style.display = "block";
+            pInput.placeholder = "e.g. client.lua, meta.xml, test.map";
+            pInput.value = "";
+            pBtn.innerText = "Create";
+            pBtn.className = "btn-action";
+            pModal.style.display = "flex";
+            setTimeout(() => pInput.focus(), 50);
+        } else if (act === "delete") {
+            let targets = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+            if (targets.length === 0) return alert("Select a file to delete first!");
+            pTitle.innerText = `Delete ${targets.length} file(s) from [${selectedResource}]?`;
+            pInput.style.display = "none";
+            pBtn.innerText = "Delete Permanently";
+            pBtn.className = "btn-action btn-revert-file";
+            pModal.style.display = "flex";
+        }
+    }
+
+    function ctxRename() {
+        if (!isCurrentUserAdmin) return;
+        if (!selectedResource || !selectedFile) return alert("Select a file to rename first!");
+        if (selectedFile === "meta.xml") return alert("meta.xml cannot be renamed.");
+        
+        activeModalAction = "rename";
+        let pModal = document.getElementById("prompt-modal");
+        let pTitle = document.getElementById("prompt-title");
+        let pInput = document.getElementById("prompt-input");
+        let pBtn = document.getElementById("prompt-confirm-btn");
+
+        pTitle.innerText = `Rename '${selectedFile}'`;
+        pInput.style.display = "block";
+        pInput.value = selectedFile;
+        pBtn.innerText = "Rename";
+        pBtn.className = "btn-action";
+        pModal.style.display = "flex";
+        setTimeout(() => { pInput.focus(); pInput.select(); }, 50);
+    }
+
+    function closePromptModal() {
+        document.getElementById("prompt-modal").style.display = "none";
+        activeModalAction = null;
+    }
+
+    function confirmPromptModal() {
+        if (!activeModalAction) return;
+        let val = document.getElementById("prompt-input").value.trim();
+        
+        if (activeModalAction === "create") {
+            if (!val) return alert("Enter a valid file name!");
+            showLoading("Creating file...");
+            triggerMTA("editor:createFile", selectedResource, val);
+        } else if (activeModalAction === "rename") {
+            if (!val || val === selectedFile) return closePromptModal();
+            showLoading("Renaming file...");
+            triggerMTA("editor:renameFile", selectedResource, selectedFile, val);
+        } else if (activeModalAction === "delete") {
+            let targets = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+            showLoading("Deleting file(s)...");
+            targets.forEach(f => triggerMTA("editor:deleteFile", selectedResource, f));
+        }
+        closePromptModal();
+    }
+
+    function promptRestoreResource() {
+        if (!isCurrentUserAdmin) return;
+        if (!selectedResource) return alert("Select a resource to inspect backups!");
+        showLoading("Fetching backups...");
+        triggerMTA("editor:requestBackups", selectedResource);
+    }
+
+    function showBackupModal(backups) {
+        hideLoading();
+        let modal = document.getElementById("backups-modal");
+        let container = document.getElementById("backups-content");
+        container.innerHTML = "";
+        
+        if (!backups || backups.length === 0) {
+            container.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:10px;">No historical backups found for [${selectedResource}].</div>`;
+        } else {
+            backups.forEach(b => {
+                let div = document.createElement("div");
+                div.style = "background:var(--bg-editor); border:1px solid var(--border); padding:8px; border-radius:3px; display:flex; justify-content:space-between; align-items:center;";
+                
+                let extraSafe = (b.extra || "").replace(/'/g, "\\'");
+                let detailsSafe = (b.details || "").replace(/'/g, "\\'");
+
+                div.innerHTML = `
+                    <div>
+                        <div style="font-weight:bold; font-size:12px; color:#fff;">${b.details}</div>
+                        <div style="font-size:10px; color:var(--text-muted);">${b.time} | Action: ${b.action}</div>
+                    </div>
+                    <button class="btn-action" style="padding:4px 10px; font-size:11px;" onclick="executeDirectRestore('${selectedResource}', '${detailsSafe}', '${b.time}', '${extraSafe}')">Restore</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+        modal.style.display = "flex";
+    }
+
+    function executeDirectRestore(res, details, ts, extraPath) {
+        closeBackupsModal();
+        showLoading("Restoring backup...");
+        triggerMTA("editor:restoreBackup", res, details, ts, extraPath);
+    }
+
+    function closeBackupsModal() {
+        document.getElementById("backups-modal").style.display = "none";
+    }
+
+    function showLogsModal(logs) {
+        hideLoading();
+        let modal = document.getElementById("logs-modal");
+        let container = document.getElementById("logs-content");
+        container.innerHTML = "";
+        if (!logs || logs.length === 0) {
+            container.innerHTML = `<div style="color:var(--text-muted); font-size:12px; padding:10px;">No logs recorded yet.</div>`;
+        } else {
+            logs.forEach(l => {
+                let d = document.createElement("div");
+                d.style = "border-bottom:1px solid rgba(255,255,255,0.05); padding:3px 0;";
+                d.innerHTML = `<span style="color:var(--text-muted);">[${l.time}]</span> <b style="color:var(--accent);">${l.admin}</b> -> <span style="color:#FF9800;">${l.action}</span>: ${l.details}`;
+                container.appendChild(d);
+            });
+        }
+        modal.style.display = "flex";
+    }
+
+    function closeLogsModal() {
+        document.getElementById("logs-modal").style.display = "none";
+    }
+
+    function syncDirectory(targetRes) {
+        hideLoading();
+        if (targetRes && targetRes === selectedResource) {
+            triggerMTA("editor:requestFiles", selectedResource);
+        } else if (!targetRes && selectedResource) {
+            triggerMTA("editor:requestFiles", selectedResource);
+        }
+    }
+
+    // Preferences Persistence
+    function applyUserPreferences() {
+        let bgBlur = document.getElementById("pref-bgblur").checked;
+        let val = document.getElementById("pref-bgblur-range").value || "50";
+        let wrapping = document.getElementById("pref-wrapping").checked;
+        let autosave = document.getElementById("pref-autosave").checked;
+        let autorestart = document.getElementById("pref-autorestart").checked;
+        let accent = localStorage.getItem("dre_accent_color") || "#007acc";
+
+        localStorage.setItem("dre_bg_blur", bgBlur);
+        localStorage.setItem("dre_bg_dim_val", val);
+        localStorage.setItem("dre_theme", currentSelectTheme);
+        localStorage.setItem("dre_fontsize", currentSelectFontSize);
+        localStorage.setItem("dre_wrapping", wrapping);
+        localStorage.setItem("dre_autosave", autosave);
+        localStorage.setItem("dre_autorestart", autorestart);
+
+        let sliderRow = document.getElementById("bgblur-slider-row");
+        let backdrop = document.getElementById("dre-backdrop-blur");
+        if (bgBlur) {
+            document.body.classList.add("enable-bg-blur");
+            sliderRow.style.display = "flex";
+            document.getElementById("bgblur-val-label").innerText = val + "%";
+            let alpha = (parseInt(val) / 100).toFixed(2);
+            backdrop.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+        } else {
+            document.body.classList.remove("enable-bg-blur");
+            sliderRow.style.display = "none";
+        }
+
+        document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
+        if (currentSelectTheme !== "default") {
+            document.body.classList.add("theme-" + currentSelectTheme);
+        }
+
+        if (editor) {
+            editor.setOption("lineWrapping", wrapping);
+            editor.getWrapperElement().style.fontSize = currentSelectFontSize;
+            editor.refresh();
+        }
+
+        if (!isApplyingPreferences) {
+            let bundle = {
+                theme: currentSelectTheme,
+                fontsize: currentSelectFontSize,
+                accent: accent,
+                wrapping: wrapping,
+                autosave: autosave,
+                autorestart: autorestart,
+                bgblur: bgBlur,
+                dim_val: val,
+                keybinds: keybinds
+            };
+            triggerMTA("editor:savePreferencesToServer", JSON.stringify(bundle));
+        }
+    }
+
+    function applyServerPreferences(jsonString) {
+        if (!jsonString) return;
+        try {
+            let p = JSON.parse(jsonString);
+            isApplyingPreferences = true;
+
+            if (p.theme) currentSelectTheme = p.theme;
+            if (p.fontsize) currentSelectFontSize = p.fontsize;
+            if (p.accent) applyAccentColor(p.accent);
+            if (p.keybinds) { keybinds = Object.assign(keybinds, p.keybinds); loadKeybinds(); }
+
+            document.getElementById("pref-wrapping").checked = (p.wrapping !== false);
+            document.getElementById("pref-autosave").checked = (p.autosave === true);
+            document.getElementById("pref-autorestart").checked = (p.autorestart !== false);
+            document.getElementById("pref-bgblur").checked = (p.bgblur === true);
+            document.getElementById("pref-bgblur-range").value = p.dim_val || "50";
+
+            let optEl = document.querySelector(`#theme-opts div[onclick*="'${currentSelectTheme}'"]`);
+            if (optEl) document.getElementById("sel-label-theme").innerText = optEl.innerText;
+            document.getElementById("sel-label-fontsize").innerText = currentSelectFontSize;
+
+            applyUserPreferences();
+            isApplyingPreferences = false;
+        } catch (e) { isApplyingPreferences = false; }
+    }
+
+    function loadUserPreferences() {
+        let savedTheme = localStorage.getItem("dre_theme") || "default";
+        currentSelectTheme = savedTheme;
+        let optEl = document.querySelector(`#theme-opts div[onclick*="'${savedTheme}'"]`);
+        if (optEl) document.getElementById("sel-label-theme").innerText = optEl.innerText;
+
+        let savedSize = localStorage.getItem("dre_fontsize") || "14px";
+        currentSelectFontSize = savedSize;
+        document.getElementById("sel-label-fontsize").innerText = savedSize;
+
+        let savedDim = localStorage.getItem("dre_bg_dim_val") || "50";
+        document.getElementById("pref-bgblur-range").value = savedDim;
+        document.getElementById("pref-bgblur").checked = (localStorage.getItem("dre_bg_blur") === "true");
+
+        let savedAccent = localStorage.getItem("dre_accent_color") || "#007acc";
+        applyAccentColor(savedAccent);
+
+        try {
+            let loc = localStorage.getItem("dre_local_recent_res");
+            if (loc) localRecentResources = JSON.parse(loc);
+        } catch(e) {}
+
+        loadKeybinds();
+        applyUserPreferences();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+            lineNumbers: true, mode: "lua", theme: "material-darker",
+            lineWrapping: true, indentUnit: 4, matchBrackets: true,
+            viewportMargin: 15
+        });
+
+        loadUserPreferences();
+
+        editor.on("change", () => {
+            if (suppressDirty || !activeTabId) return;
+            let tab = openTabs.find(t => t.id === activeTabId);
+            if (tab && !tab.isInspector) {
+                let val = editor.getValue();
+                let changed = (val !== tab.originalContent);
+                tab.content = val;
+                tab.isDirty = changed;
+                renderTabs();
+            }
+        });
+
+        checkWelcomeStatus();
+
+        setTimeout(() => { triggerMTA("editor:onUIReady"); }, 250);
+    });
+
+    function setResources(resList, isSuperAdmin, accessLevel, srvVersion) {
+        allResources = resList || [];
+        isCurrentUserAdmin = !!isSuperAdmin;
+        currentUserAccessLevel = accessLevel || "editor";
+
+        let titleEl = document.getElementById("dre-titlebar-text");
+        if (titleEl) {
+            titleEl.innerText = isCurrentUserAdmin ? "Dynamic Resource Editor - Admin Mode" : "Dynamic Resource Editor - Read Only Mode";
+        }
+
+        let btnUpdater = document.getElementById("btn-check-updater");
+        if (btnUpdater) {
+            btnUpdater.style.display = isCurrentUserAdmin ? "flex" : "none";
+        }
+
+        let btnsToToggle = ["btn-create-file", "btn-copy-file", "btn-rename-file", "btn-delete-file", "btn-save-file", "btn-backups", "btn-revert-file", "dropdown-templates-wrapper"];
+        btnsToToggle.forEach(id => {
+            let el = document.getElementById(id);
+            if (el) el.style.display = isCurrentUserAdmin ? "" : "none";
+        });
+
+        if (!isCurrentUserAdmin) {
+            updateStatus("Read-Only Mode Enabled", "#2196F3");
+            if (editor) editor.setOption("readOnly", "nocursor");
+        } else {
+            if (editor) editor.setOption("readOnly", false);
+        }
+
+        if (srvVersion) {
+            let num = parseFloat(srvVersion);
+            CURRENT_DRE_VERSION = (!isNaN(num) && num > 0) ? num.toFixed(1) : "3.0";
+            let wt = document.querySelector("#welcome-modal .welcome-header h2");
+            if (wt) wt.innerHTML = `&#10024; Welcome to DRE v${CURRENT_DRE_VERSION}`;
+        }
+        checkWelcomeStatus();
+        filterResources();
+    }
+
+    function checkWelcomeStatus() {
+        let dismissedVersion = localStorage.getItem("dre_welcomed_version");
+        if (dismissedVersion !== CURRENT_DRE_VERSION) {
+            openWelcomeModal(true);
+        }
+    }
+
+    function openWelcomeModal(force) { 
+        document.getElementById("welcome-modal").style.display = "flex"; 
+    }
+
+    function confirmChangelogUntilNextUpdate() {
+        localStorage.setItem("dre_welcomed_version", CURRENT_DRE_VERSION);
+        document.getElementById("welcome-modal").style.display = "none";
+    }
+
+    // Copy Picker & Recent Targets
+    let copyTargetSelectedRes = null;
+    function openCopyPicker() {
+        if (!isCurrentUserAdmin) return;
+        let targets = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+        if (targets.length === 0) return alert("Select files to copy first!");
+
+        document.getElementById("copy-picker-wrapper").style.display = "flex";
+        document.getElementById("editor-wrapper").style.display = "none";
+        document.getElementById("empty-workspace-state").style.display = "none";
+        document.getElementById("copy-filter-input").value = "";
+        copyTargetSelectedRes = null;
+        
+        renderRecentTargetsBar();
+        triggerMTA("editor:requestRecentTargets");
+        setCopyCategoryFilter("all");
+    }
+
+    function closeCopyPicker() {
+        document.getElementById("copy-picker-wrapper").style.display = "none";
+        if (activeTabId) {
+            document.getElementById("editor-wrapper").style.display = "block";
+        } else {
+            document.getElementById("empty-workspace-state").style.display = "flex";
+        }
+    }
+
+    function receiveRecentTargets(recents) {
+        serverRecentTargets = recents || [];
+        renderRecentTargetsBar();
+        filterCopyPicker();
+    }
+
+    function renderRecentTargetsBar() {
+        let bar = document.getElementById("copy-recents-list");
+        bar.innerHTML = "";
+        let recents = getCombinedRecentTargets();
+        if (!recents || recents.length === 0) {
+            bar.innerHTML = `<span style="font-size:11px; color:var(--text-muted);">None yet</span>`;
+            return;
+        }
+        recents.forEach(res => {
+            let chip = document.createElement("span");
+            chip.className = "copy-recent-chip";
+            chip.innerText = res;
+            chip.onclick = () => { selectCopyTargetCard(res); };
+            bar.appendChild(chip);
+        });
+    }
+
+    function selectCopyTargetCard(resName) {
+        copyTargetSelectedRes = resName;
+        document.querySelectorAll('.copy-res-card').forEach(c => c.classList.remove('selected'));
+        let card = Array.from(document.querySelectorAll('.copy-res-card')).find(c => c.innerText.trim() === resName);
+        if (card) card.classList.add('selected');
+    }
+
+    function filterCopyPicker() {
+        let q = (document.getElementById("copy-filter-input").value || "").toLowerCase();
+        let g = document.getElementById("copy-grid");
+        g.innerHTML = "";
+        
+        let recents = getCombinedRecentTargets();
+        allResources.forEach(r => {
+            let n = typeof r === "object" ? r.name : r;
+            if (n.toLowerCase().includes(q) && doesResourceMatchCategory(r, activeCopyCategoryFilter)) {
+                let d = document.createElement("div");
+                let isRecent = recents.includes(n);
+                d.className = "copy-res-card" + (isRecent ? " recent-highlight" : "") + (copyTargetSelectedRes === n ? " selected" : "");
+                d.innerHTML = `<span>${n}</span>`;
+                d.onclick = () => { selectCopyTargetCard(n); };
+                d.ondblclick = () => {
+                    selectCopyTargetCard(n);
+                    executeCopyPicker();
+                };
+                g.appendChild(d);
+            }
+        });
+    }
+
+    function executeCopyPicker() {
+        if (!copyTargetSelectedRes) return alert("Select a target resource first!");
+        let targets = selectedFiles.length > 0 ? selectedFiles : (selectedFile ? [selectedFile] : []);
+        if (targets.length === 0) return closeCopyPicker();
+
+        trackActiveResource(copyTargetSelectedRes);
+
+        if (targets.length === 1) {
+            triggerMTA("editor:copyFile", selectedResource, targets[0], copyTargetSelectedRes, targets[0]);
+        } else {
+            triggerMTA("editor:copyMultipleFiles", selectedResource, targets.join("|"), copyTargetSelectedRes);
+        }
+        closeCopyPicker();
+    }
+
+    function triggerMTA(evt, ...args) { if (typeof mta !== "undefined") mta.triggerEvent(evt, ...args); }
+    function showLoading(txt) { document.getElementById('loading-text').innerText = txt; document.getElementById('loading-overlay').style.display = 'flex'; }
+    function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+    function actionComplete() { hideLoading(); }
+    function updateStatus(txt, col) { document.getElementById("status-text").innerText = txt; if(col) document.querySelector(".statusbar").style.background = col; }
+    function setCategoryFilter(cat) { activeCategoryFilter = cat; document.querySelectorAll(".sidebar .filter-chip").forEach(c => c.classList.remove("active")); document.getElementById("filter-chip-" + cat).classList.add("active"); filterResources(); }
+    function switchSettingsTab(tab) { document.querySelectorAll(".settings-tab-btn").forEach(b => b.classList.remove("active")); document.getElementById("btn-tab-" + tab).classList.add("active"); document.getElementById("settings-pane-general").style.display = (tab === "general" ? "block" : "none"); document.getElementById("settings-pane-keybinds").style.display = (tab === "keybinds" ? "block" : "none"); }
+    function openSettingsModal() { document.getElementById("settings-modal").style.display = "flex"; }
+    function closeSettingsModal() { document.getElementById("settings-modal").style.display = "none"; }
+    function attemptCloseEditor() { triggerMTA("editor:onRequestClose"); }
+    
+    function attemptCloseTab(id) { 
+        openTabs = openTabs.filter(t => t.id !== id); 
+        if (openTabs.length > 0) {
+            switchTab(openTabs[openTabs.length - 1].id); 
+        } else { 
+            resetWorkspaceToEmpty();
+        } 
+    }
+
+    function saveActiveTab() { if (!activeTabId || !isCurrentUserAdmin) return; let tab = openTabs.find(t => t.id === activeTabId); tab.originalContent = editor.getValue(); tab.isDirty = false; trackActiveResource(tab.res); renderTabs(); triggerMTA("editor:saveFile", tab.res, tab.file, editor.getValue()); }
+    function revertActiveTab() { if (!activeTabId || !isCurrentUserAdmin) return; let tab = openTabs.find(t => t.id === activeTabId); if(!tab.isInspector){ editor.setValue(tab.originalContent); tab.isDirty = false; renderTabs(); } }
+    function triggerCheckUpdate() { triggerMTA("editor:checkUpdate"); }
+</script>
+</body>
+</html>

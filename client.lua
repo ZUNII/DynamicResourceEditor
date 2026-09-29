@@ -48,6 +48,7 @@ function toggleEditor(state, skipResourceFetch)
             isMinimized = false
             if not skipResourceFetch then
                 triggerServerEvent("editor:requestResources", localPlayer)
+                triggerServerEvent("editor:requestPreferences", localPlayer)
             end
         end
         toggleInput(true)
@@ -75,11 +76,18 @@ bindKey("F2", "down", function()
     end
 end)
 
+-- ==========================================
 -- SYNC (SERVER -> CEF)
+-- ==========================================
 addEvent("editor:receiveResources", true)
-addEventHandler("editor:receiveResources", root, function(resList)
+addEventHandler("editor:receiveResources", root, function(resList, isSuperAdmin, accessLevel, currentVersion)
     if editorBrowser and type(resList) == "table" then
-        executeBrowserJavascript(editorBrowser, "setResources(" .. toJSON(resList):sub(2, -2) .. ");")
+        executeBrowserJavascript(editorBrowser, string.format("setResources(%s, %s, '%s', '%s');", 
+            toJSON(resList):sub(2, -2), 
+            tostring(isSuperAdmin), 
+            tostring(accessLevel), 
+            tostring(currentVersion or "2.9")
+        ))
     end
 end)
 
@@ -98,12 +106,31 @@ end)
 
 addEvent("editor:receiveLogs", true)
 addEventHandler("editor:receiveLogs", root, function(logs)
-    if editorBrowser then executeBrowserJavascript(editorBrowser, "showLogsModal(" .. toJSON(logs):sub(2, -2) .. ");") end
+    if editorBrowser then executeBrowserJavascript(editorBrowser, "showLogsModal(" .. toJSON(logs or {}):sub(2, -2) .. ");") end
 end)
 
 addEvent("editor:receiveBackups", true)
 addEventHandler("editor:receiveBackups", root, function(backups)
-    if editorBrowser then executeBrowserJavascript(editorBrowser, "showBackupModal(" .. toJSON(backups):sub(2, -2) .. ");") end
+    if editorBrowser then executeBrowserJavascript(editorBrowser, "showBackupModal(" .. toJSON(backups or {}):sub(2, -2) .. ");") end
+end)
+
+addEvent("editor:receiveRecentTargets", true)
+addEventHandler("editor:receiveRecentTargets", root, function(recentsList)
+    if editorBrowser and type(recentsList) == "table" then
+        executeBrowserJavascript(editorBrowser, "receiveRecentTargets(" .. toJSON(recentsList) .. ");")
+    end
+end)
+
+addEvent("editor:receivePreferences", true)
+addEventHandler("editor:receivePreferences", root, function(settingsJSON)
+    if editorBrowser and settingsJSON then
+        executeBrowserJavascript(editorBrowser, "applyServerPreferences(" .. toJSON(settingsJSON) .. ");")
+    end
+end)
+
+addEvent("editor:reloadPreferences", true)
+addEventHandler("editor:reloadPreferences", root, function()
+    triggerServerEvent("editor:requestPreferences", localPlayer)
 end)
 
 addEvent("editor:actionComplete", true)
@@ -111,7 +138,14 @@ addEventHandler("editor:actionComplete", root, function()
     if editorBrowser then executeBrowserJavascript(editorBrowser, "actionComplete();") end
 end)
 
+-- ==========================================
 -- FEEDBACK (CEF -> LUA)
+-- ==========================================
+addEvent("editor:savePreferencesToServer", true)
+addEventHandler("editor:savePreferencesToServer", root, function(settingsJSON)
+    triggerServerEvent("editor:savePreferences", localPlayer, settingsJSON)
+end)
+
 addEvent("editor:onEditorStatus", true)
 addEventHandler("editor:onEditorStatus", root, function(text, color)
     if editorBrowser then executeBrowserJavascript(editorBrowser, "updateStatus('"..text.."', '"..color.."')") end
@@ -119,7 +153,7 @@ end)
 
 local saveBuffer = ""
 addEvent("editor:onRequestSave", true)
-addEventHandler("editor:onRequestSave", root, function(res, file, chunk, currentChunk, totalChunks)
+addEventHandler("editor:onRequestSave", root, function(res, file, chunk, currentChunk, totalChunks, autoRestart)
     if currentChunk == 1 then saveBuffer = chunk else saveBuffer = saveBuffer .. chunk end
     if currentChunk == totalChunks then
         local finalContent = saveBuffer
@@ -146,19 +180,31 @@ addEvent("editor:onRequestClose", true)
 addEventHandler("editor:onRequestClose", root, function() toggleEditor(false) end)
 
 addEvent("editor:onUIReady", true)
-addEventHandler("editor:onUIReady", root, function() triggerServerEvent("editor:requestResources", localPlayer) end)
-
-addEvent("editor:syncDirectory", true)
-addEventHandler("editor:syncDirectory", root, function()
-    executeBrowserJavascript(editorBrowser, "syncDirectory();")
+addEventHandler("editor:onUIReady", root, function() 
+    triggerServerEvent("editor:requestResources", localPlayer)
+    triggerServerEvent("editor:requestPreferences", localPlayer)
 end)
 
+addEvent("editor:syncDirectory", true)
+addEventHandler("editor:syncDirectory", root, function(targetRes)
+    local js = targetRes and string.format("syncDirectory('%s');", targetRes) or "syncDirectory();"
+    executeBrowserJavascript(editorBrowser, js)
+end)
+
+addEvent("editor:checkUpdate", true)
+addEventHandler("editor:checkUpdate", root, function() triggerServerEvent("editor:checkUpdate", localPlayer) end)
+
+-- ==========================================
 -- INTERFACE EVENTS
+-- ==========================================
 addEvent("editor:requestFiles", true)
 addEventHandler("editor:requestFiles", root, function(res) triggerServerEvent("editor:requestFiles", localPlayer, res) end)
 
 addEvent("editor:requestContent", true)
 addEventHandler("editor:requestContent", root, function(res, file) triggerServerEvent("editor:requestContent", localPlayer, res, file) end)
+
+addEvent("editor:saveFile", true)
+addEventHandler("editor:saveFile", root, function(res, file, content) triggerServerEvent("editor:saveFile", localPlayer, res, file, content) end)
 
 addEvent("editor:createFile", true)
 addEventHandler("editor:createFile", root, function(res, file) triggerServerEvent("editor:createFile", localPlayer, res, file) end)
@@ -182,16 +228,18 @@ addEvent("editor:requestBackups", true)
 addEventHandler("editor:requestBackups", root, function(res) triggerServerEvent("editor:requestBackups", localPlayer, res) end)
 
 addEvent("editor:restoreBackup", true)
-addEventHandler("editor:restoreBackup", root, function(res, details, ts) triggerServerEvent("editor:restoreBackup", localPlayer, res, details, ts) end)
+addEventHandler("editor:restoreBackup", root, function(res, details, ts, extraPath) 
+    triggerServerEvent("editor:restoreBackup", localPlayer, res, details, ts, extraPath) 
+end)
 
 addEvent("editor:copyMultipleFiles", true)
 addEventHandler("editor:copyMultipleFiles", root, function(sRes, filesData, tRes) 
     triggerServerEvent("editor:copyMultipleFiles", localPlayer, sRes, filesData, tRes) 
 end)
 
--- ==============================================================
--- MATHEMATICAL UTILITIES
--- ==============================================================
+-- ==========================================
+-- MATHEMATICAL UTILITIES & OBJECT / MARKER PICKER
+-- ==========================================
 local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     local dx, dy, dz = rx2 - rx1, ry2 - ry1, rz2 - rz1
     local magSq = dx * dx + dy * dy + dz * dz
@@ -202,39 +250,64 @@ local function getDistanceToRay(px, py, pz, rx1, ry1, rz1, rx2, ry2, rz2)
     return getDistanceBetweenPoints3D(px, py, pz, nx, ny, nz)
 end
 
--- ==============================================================
--- PRECISE MARKER POSITION RESOLUTION
--- ==============================================================
-local function getElementWorldPosition(element)
-    if isElement(element) then
-        local px, py, pz = getElementPosition(element)
-        if px and py and pz and (px ~= 0 or py ~= 0 or pz ~= 0) then
-            return px, py, pz
+local function findMarkerTarget(cx, cy, cz, ex, ey, ez)
+    local bestDist = 999999
+    local chosenElement = nil
+    
+    local markerCandidates = {}
+    for _, marker in ipairs(getElementsByType("marker")) do 
+        table.insert(markerCandidates, marker) 
+    end
+    
+    local kmstTypes = {"jump", "teleport", "slowmotion", "environment", "camera", "fx"}
+    for _, cType in ipairs(kmstTypes) do
+        for _, el in ipairs(getElementsByType(cType)) do
+            table.insert(markerCandidates, el)
+            for _, child in ipairs(getElementChildren(el)) do 
+                table.insert(markerCandidates, child) 
+            end
         end
     end
 
-    for _, child in ipairs(getElementChildren(element)) do
-        local cx, cy, cz = getElementPosition(child)
-        if cx and cy and cz and (cx ~= 0 or cy ~= 0 or cz ~= 0) then
-            return cx, cy, cz
+    for _, el in ipairs(markerCandidates) do
+        if isElement(el) then
+            local px, py, pz = getElementPosition(el)
+            local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, px, py, pz)
+            if distFromCam < 500 then
+                local rayDist = getDistanceToRay(px, py, pz, cx, cy, cz, ex, ey, ez)
+                local size = tonumber(getElementData(el, "size")) or 2.25
+                local threshold = math.max(3.5, size * 1.8)
+                if rayDist <= threshold and rayDist < bestDist then
+                    bestDist = rayDist
+                    chosenElement = el
+                end
+            end
         end
     end
+    
+    return chosenElement
+end
 
-    local x = tonumber(getElementData(element, "posX"))
-    local y = tonumber(getElementData(element, "posY"))
-    local z = tonumber(getElementData(element, "posZ"))
-    if x and y and z then return x, y, z end
-
-    local rawPos = getElementData(element, "position")
-    if type(rawPos) == "string" then
-        local parts = split(rawPos, ",")
-        if #parts >= 3 then
-            local sx, sy, sz = tonumber(parts[1]), tonumber(parts[2]), tonumber(parts[3])
-            if sx and sy and sz then return sx, sy, sz end
-        end
+local function findObjectTarget(cx, cy, cz, ex, ey, ez)
+    local hit, hx, hy, hz, hitEl = processLineOfSight(cx, cy, cz, ex, ey, ez, true, true, true, true, true, false, false, false, localPlayer)
+    if hit and hitEl and isElement(hitEl) and getElementType(hitEl) == "object" then 
+        return hitEl 
     end
 
-    return 0, 0, 0
+    local bestDist = 999999
+    local chosenElement = nil
+    for _, obj in ipairs(getElementsByType("object", root, true)) do
+        local ox, oy, oz = getElementPosition(obj)
+        local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, ox, oy, oz)
+        if distFromCam < 300 then
+            local rayDist = getDistanceToRay(ox, oy, oz, cx, cy, cz, ex, ey, ez)
+            if rayDist < 3.0 and rayDist < bestDist then
+                bestDist = rayDist
+                chosenElement = obj
+            end
+        end
+    end
+    return chosenElement
 end
 
 local function getElementProperties(element)
@@ -243,16 +316,16 @@ local function getElementProperties(element)
     local parentType = parent and tostring(getElementType(parent)):lower() or ""
     
     local customTypes = {["jump"]=true, ["teleport"]=true, ["slowmotion"]=true, ["environment"]=true, ["camera"]=true, ["fx"]=true, ["advancedobject"]=true, ["movingobject"]=true}
-    if customTypes[parentType] then
-        targetEl = parent
+    if customTypes[parentType] then 
+        targetEl = parent 
     end
 
     local elType = tostring(getElementType(targetEl)):lower()
     local edID = getElementData(targetEl, "id") or getElementID(targetEl) or getElementData(element, "id") or getElementID(element) or ""
 
-    local posX, posY, posZ = getElementWorldPosition(element)
+    local posX, posY, posZ = getElementPosition(element)
     if posX == 0 and posY == 0 and posZ == 0 then
-        posX, posY, posZ = getElementWorldPosition(targetEl)
+        posX, posY, posZ = getElementPosition(targetEl)
     end
 
     local isMarkerLike = (elType == "marker" or elType == "jump" or elType == "teleport" or elType == "slowmotion" or elType == "environment" or elType == "camera")
@@ -300,101 +373,32 @@ local function getElementProperties(element)
     }
 end
 
--- ==============================================================
--- TARGET DETECTION VIA CAMERA ALIGNMENT
--- ==============================================================
-local function findCrosshairTarget()
+onSelectionClick = function()
+    if not isSelectingObject then return end
+    isSelectingObject = false
+    unbindKey("mouse1", "down", onSelectionClick)
+
     local cx, cy, cz, lx, ly, lz = getCameraMatrix()
     local dirX, dirY, dirZ = lx - cx, ly - cy, lz - cz
     local len = math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ)
-    if len > 0 then
-        dirX, dirY, dirZ = dirX/len, dirY/len, dirZ/len
-    else
-        dirX, dirY, dirZ = 0, 1, 0
-    end
+    if len > 0 then dirX, dirY, dirZ = dirX/len, dirY/len, dirZ/len else dirX, dirY, dirZ = 0, 1, 0 end
 
     local rayEndDist = 500
     local ex, ey, ez = cx + (dirX * rayEndDist), cy + (dirY * rayEndDist), cz + (dirZ * rayEndDist)
 
-    local bestDist = 999999
-    local chosenElement = nil
-
-    -- 1. Scan markers & KMST elements
-    local markerList = {}
-    for _, marker in ipairs(getElementsByType("marker")) do table.insert(markerList, marker) end
-    
-    local kmstMarkerTypes = {"jump", "teleport", "slowmotion", "environment", "camera", "fx"}
-    for _, cType in ipairs(kmstMarkerTypes) do
-        for _, el in ipairs(getElementsByType(cType)) do
-            table.insert(markerList, el)
-            for _, child in ipairs(getElementChildren(el)) do
-                table.insert(markerList, child)
-            end
-        end
+    local targetElement = findMarkerTarget(cx, cy, cz, ex, ey, ez)
+    if not targetElement then
+        targetElement = findObjectTarget(cx, cy, cz, ex, ey, ez)
     end
-
-    for _, el in ipairs(markerList) do
-        local px, py, pz = getElementWorldPosition(el)
-        local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, px, py, pz)
-        if distFromCam < 500 then
-            local rayDist = getDistanceToRay(px, py, pz, cx, cy, cz, ex, ey, ez)
-            local size = tonumber(getElementData(el, "size")) or 2.25
-            local threshold = math.max(3.0, size * 1.5)
-
-            if rayDist <= threshold and rayDist < bestDist then
-                bestDist = rayDist
-                chosenElement = el
-            end
-        end
-    end
-
-    if chosenElement then
-        return chosenElement
-    end
-
-    -- 2. Physical raycast for regular objects
-    local hit, hx, hy, hz, hitEl = processLineOfSight(cx, cy, cz, ex, ey, ez, true, true, true, true, true, false, false, false, localPlayer)
-    if hit and hitEl and isElement(hitEl) then
-        return hitEl
-    end
-
-    -- 3. Fallback for map objects
-    for _, obj in ipairs(getElementsByType("object", root, true)) do
-        local ox, oy, oz = getElementPosition(obj)
-        local distFromCam = getDistanceBetweenPoints3D(cx, cy, cz, ox, oy, oz)
-        if distFromCam < 300 then
-            local rayDist = getDistanceToRay(ox, oy, oz, cx, cy, cz, ex, ey, ez)
-            if rayDist < 3.0 and rayDist < bestDist then
-                bestDist = rayDist
-                chosenElement = obj
-            end
-        end
-    end
-
-    return chosenElement
-end
-
--- ==============================================================
--- SELECTION EVENT HANDLER
--- ==============================================================
-onSelectionClick = function()
-    if not isSelectingObject then return end
-    
-    isSelectingObject = false
-    unbindKey("mouse1", "down", onSelectionClick)
-
-    local targetElement = findCrosshairTarget()
 
     setTimer(function()
         if targetElement and isElement(targetElement) then
             local p = getElementProperties(targetElement)
             toggleEditor(true, true)
-
             setTimer(function()
                 if isElement(editorBrowser) then
                     local payloadJSON = toJSON(p):sub(2, -2)
-                    local js = string.format("showInspectedElement(%s);", payloadJSON)
-                    executeBrowserJavascript(editorBrowser, js)
+                    executeBrowserJavascript(editorBrowser, string.format("showInspectedElement(%s);", payloadJSON))
                 end
             end, 150, 1)
         else
@@ -408,7 +412,6 @@ addEventHandler("editor:onStartObjectSelection", root, function()
     isSelectingObject = true
     toggleEditor(false)
     showCursor(false)
-    
     setTimer(function()
         if isSelectingObject then
             bindKey("mouse1", "down", onSelectionClick)
