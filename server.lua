@@ -415,6 +415,9 @@ addEventHandler("editor:copyFile", root, function(srcRes, srcFile, tgtRes, tgtFi
     if not isPlayerAdmin(clientRef) then 
         return sendError(clientRef, "Read-Only: You need to be an ACL Admin to copy files!")
     end
+    if srcRes == tgtRes then
+        return sendError(clientRef, "Action forbidden: Cannot copy files into the same resource!")
+    end
     if not isExtensionAllowed(tgtFile) then
         return sendError(clientRef, "Target filetype not supported!")
     end
@@ -434,6 +437,9 @@ addEventHandler("editor:copyMultipleFiles", root, function(sourceResName, filesD
     local clientRef = client
     if not isPlayerAdmin(clientRef) then 
         return sendError(clientRef, "Read-Only: You need to be an ACL Admin to copy files!")
+    end
+    if sourceResName == targetResName then
+        return sendError(clientRef, "Action forbidden: Cannot copy files into the same resource!")
     end
     if isResourceZipped(targetResName) then
         return sendError(clientRef, "Target resource '" .. targetResName .. "' is a ZIP archive!")
