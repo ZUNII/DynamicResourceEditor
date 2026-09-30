@@ -11,7 +11,7 @@ Dynamic Resource Editor (DRE) is a professional-grade, real-time In-Game IDE and
 * **📂 Enhanced File Management & Multi-Selection:**
     * **Multi-Selection:** Hold `CTRL` to select multiple files simultaneously in the explorer.
     * **Batch & Direct Copying:** Upgraded copy window featuring real-time search, category filters (**All, Maps, Scripts, Shaders**), and a **Recent Targets** quick-access bar highlighting your 5 most recently edited resources.
-* ** Tab & Workspace System:** Edit multiple files simultaneously with an intuitive tabbed interface.
+* **Tab & Workspace System:** Edit multiple files simultaneously with an intuitive tabbed interface.
 * **Smart File Manager:** Create, delete, rename, or copy files. The `meta.xml` is automatically updated and maintained.
 * **Backup & Recovery:** Robust timestamped backups and an instant "Restore" mechanism linked to historical activity logs.
 * **Activity Audit Logs:** Detailed history of all save, create, rename, and delete operations stored in `logs.db`.
