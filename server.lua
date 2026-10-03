@@ -3,7 +3,8 @@
 local allowedExtensions = {
     ["lua"] = true, ["xml"] = true, ["html"] = true, ["map"] = true,
     ["js"] = true, ["css"] = true, ["txt"] = true, ["json"] = true, ["fx"] = true, ["hlsl"] = true,
-    ["png"] = true, ["jpg"] = true, ["jpeg"] = true, ["tga"] = true, ["dds"] = true
+    ["png"] = true, ["jpg"] = true, ["jpeg"] = true, ["tga"] = true, ["dds"] = true,
+    ["dff"] = true, ["txd"] = true, ["col"] = true, ["ifp"] = true, ["wav"] = true, ["mp3"] = true
 }
 
 local CURRENT_VERSION = 3.0
